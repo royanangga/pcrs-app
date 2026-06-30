@@ -16,6 +16,7 @@ function rupiah(n) {
 
 export default function TrackPage({ requestNo }) {
   const [data, setData] = useState(null)
+  const [attachments, setAttachments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -29,11 +30,21 @@ export default function TrackPage({ requestNo }) {
         setError('Nomor request tidak ditemukan.')
       } else {
         setData(rows[0])
+        const { data: atts } = await supabase.rpc('get_tracking_attachments', { p_request_no: requestNo })
+        setAttachments(atts || [])
       }
       setLoading(false)
     }
     load()
   }, [requestNo])
+
+  function fileUrl(filePath) {
+    return supabase.storage.from('receipts').getPublicUrl(filePath).data.publicUrl
+  }
+
+  function isImage(name) {
+    return /\.(jpe?g|png|gif|webp)$/i.test(name)
+  }
 
   return (
     <div className="login-wrap">
@@ -53,6 +64,26 @@ export default function TrackPage({ requestNo }) {
             <div className="track-row">
               <span>Status</span>
               <span className={`badge badge-${data.status}`}>{STATUS_LABEL[data.status] || data.status}</span>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <strong style={{ fontSize: 13 }}>Bukti Transaksi</strong>
+              {attachments.length === 0 ? (
+                <div className="checklist-line">Tidak ada file dilampirkan.</div>
+              ) : (
+                <div className="track-attachments">
+                  {attachments.map((a, i) => (
+                    <a key={i} href={fileUrl(a.file_path)} target="_blank" rel="noreferrer" className="track-att-item">
+                      {isImage(a.file_name) ? (
+                        <img src={fileUrl(a.file_path)} alt={a.file_name} />
+                      ) : (
+                        <div className="track-att-file">📄</div>
+                      )}
+                      <span>{a.file_name}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
