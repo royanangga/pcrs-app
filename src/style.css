@@ -118,6 +118,11 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
 .qr-box { text-align: center; font-size: 11px; color: var(--text-muted); }
 .checklist-line { font-size: 12px; color: var(--text-muted); margin: 4px 0; }
 
+.filter-bar { background: var(--teal-light); border-color: #cfe7e7; }
+.filter-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; }
+.filter-row > div { min-width: 150px; }
+.filter-row label { margin-top: 0; }
+
 label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; margin-top: 12px; }
 input, select, textarea {
   width: 100%;
