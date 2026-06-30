@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
+import { AuthScreen } from './App.jsx'
 
 const STATUS_LABEL = {
   draft: 'Draft',
@@ -15,19 +16,27 @@ function rupiah(n) {
 }
 
 export default function TrackPage({ requestNo }) {
+  const [session, setSession] = useState(undefined) // undefined = belum dicek
   const [data, setData] = useState(null)
   const [attachments, setAttachments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s))
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (!session) return
     async function load() {
       setLoading(true)
       const { data: rows, error: err } = await supabase.rpc('get_tracking_info', { p_request_no: requestNo })
       if (err) {
         setError('Gagal memuat data.')
       } else if (!rows || rows.length === 0) {
-        setError('Nomor request tidak ditemukan.')
+        setError('Pengajuan tidak ditemukan, atau Anda tidak punya akses untuk melihatnya. Hanya pembuat pengajuan dan tim finance yang bisa melihat halaman ini.')
       } else {
         setData(rows[0])
         const { data: atts } = await supabase.rpc('get_tracking_attachments', { p_request_no: requestNo })
@@ -36,7 +45,7 @@ export default function TrackPage({ requestNo }) {
       setLoading(false)
     }
     load()
-  }, [requestNo])
+  }, [requestNo, session])
 
   function fileUrl(filePath) {
     return supabase.storage.from('receipts').getPublicUrl(filePath).data.publicUrl
@@ -44,6 +53,14 @@ export default function TrackPage({ requestNo }) {
 
   function isImage(name) {
     return /\.(jpe?g|png|gif|webp)$/i.test(name)
+  }
+
+  if (session === undefined) {
+    return <div className="container">Memuat...</div>
+  }
+
+  if (!session) {
+    return <AuthScreen />
   }
 
   return (
