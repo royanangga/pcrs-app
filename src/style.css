@@ -210,6 +210,43 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
 }
 .chip-x:hover { background: rgba(255,255,255,0.45); }
 
+.track-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.track-row span:first-child { color: var(--text-muted); }
+
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(20, 33, 61, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.modal-box {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  width: 320px;
+  position: relative;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+}
+.modal-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.modal-close:hover { color: var(--text); }
+
 label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; margin-top: 12px; }
 input, select, textarea {
   width: 100%;
