@@ -65,7 +65,7 @@ function trackUrl(requestNo) {
 }
 
 // ---------------------------------------------------------------- AUTH ----
-function AuthScreen() {
+export function AuthScreen() {
   const [mode, setMode] = useState('login') // login | register
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -560,7 +560,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
 }
 
 // ---------------------------------------------------------------- DASHBOARD ----
-function Dashboard({ refreshKey }) {
+function Dashboard({ refreshKey, profile }) {
   const [all, setAll] = useState([])
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterDept, setFilterDept] = useState('all')
@@ -689,7 +689,7 @@ function Dashboard({ refreshKey }) {
                   <td>{rupiah(r.total_amount)}</td>
                   <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
                   <td>
-                    {r.status === 'verified' && (
+                    {r.status === 'verified' && (r.employee_id === profile.id || ['finance_staff', 'finance_manager', 'admin'].includes(profile.role)) && (
                       <button className="btn btn-primary btn-sm" onClick={() => setQrModal(r)}>Tampilkan QR</button>
                     )}
                   </td>
@@ -771,7 +771,7 @@ export default function App() {
       </div>
 
       <div className="container">
-        {tab === 'dashboard' && <Dashboard refreshKey={refreshKey} />}
+        {tab === 'dashboard' && <Dashboard refreshKey={refreshKey} profile={profile} />}
         {tab === 'submit' && <SubmitForm profile={profile} onSubmitted={bump} />}
         {tab === 'mine' && <MyRequests profile={profile} refreshKey={refreshKey} />}
         {tab === 'approval' && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
