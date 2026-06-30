@@ -558,23 +558,88 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
 // ---------------------------------------------------------------- DASHBOARD ----
 function Dashboard({ refreshKey }) {
   const [all, setAll] = useState([])
+  const [filterStatus, setFilterStatus] = useState('all')
+  const [filterDept, setFilterDept] = useState('all')
+  const [filterCategory, setFilterCategory] = useState('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
 
   useEffect(() => {
     async function load() {
-      const { data } = await supabase.from('reimbursements').select('*')
+      const { data } = await supabase
+        .from('reimbursements')
+        .select('*, profiles(full_name, department), reimbursement_items(category)')
+        .order('created_at', { ascending: false })
       setAll(data || [])
     }
     load()
   }, [refreshKey])
 
-  const totalApproved = all.filter((r) => r.status === 'verified').reduce((s, r) => s + Number(r.total_amount), 0)
-  const outstanding = all.filter((r) => r.status === 'submitted').length
-  const pendingFinance = all.filter((r) => r.status === 'approved').length
-  const verifiedCount = all.filter((r) => r.status === 'verified').length
-  const rejectedCount = all.filter((r) => r.status === 'rejected').length
+  const departments = [...new Set(all.map((r) => r.profiles?.department).filter(Boolean))]
+
+  const filtered = all.filter((r) => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false
+    if (filterDept !== 'all' && r.profiles?.department !== filterDept) return false
+    if (filterCategory !== 'all') {
+      const cats = (r.reimbursement_items || []).map((it) => it.category)
+      if (!cats.includes(filterCategory)) return false
+    }
+    if (dateFrom && r.request_date < dateFrom) return false
+    if (dateTo && r.request_date > dateTo) return false
+    return true
+  })
+
+  const resetFilters = () => {
+    setFilterStatus('all'); setFilterDept('all'); setFilterCategory('all'); setDateFrom(''); setDateTo('')
+  }
+
+  const totalApproved = filtered.filter((r) => r.status === 'verified').reduce((s, r) => s + Number(r.total_amount), 0)
+  const outstanding = filtered.filter((r) => r.status === 'submitted').length
+  const pendingFinance = filtered.filter((r) => r.status === 'approved').length
+  const verifiedCount = filtered.filter((r) => r.status === 'verified').length
+  const rejectedCount = filtered.filter((r) => r.status === 'rejected').length
 
   return (
     <>
+      <div className="card filter-bar">
+        <h3 style={{ marginTop: 0 }}>Filter</h3>
+        <div className="filter-row">
+          <div>
+            <label>Status</label>
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+              <option value="all">Semua Status</option>
+              {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          <div>
+            <label>Department</label>
+            <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
+              <option value="all">Semua Department</option>
+              {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div>
+            <label>Kategori Expense</label>
+            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+              <option value="all">Semua Kategori</option>
+              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label>Dari Tanggal</label>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          </div>
+          <div>
+            <label>Sampai Tanggal</label>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button className="btn btn-sm" style={{ background: '#f1f3f5', color: '#333' }} onClick={resetFilters}>Reset Filter</button>
+          </div>
+        </div>
+      </div>
+
       <div className="grid-kpi">
         <div className="kpi-box"><div className="label">Total Reimbursement Terverifikasi</div><div className="value">{rupiah(totalApproved)}</div></div>
         <div className="kpi-box"><div className="label">Menunggu Approval</div><div className="value">{outstanding}</div></div>
@@ -583,17 +648,19 @@ function Dashboard({ refreshKey }) {
         <div className="kpi-box"><div className="label">Rejected</div><div className="value">{rejectedCount}</div></div>
       </div>
       <div className="card">
-        <h3>Semua Pengajuan</h3>
-        {all.length === 0 ? (
-          <div className="empty-state">Belum ada data.</div>
+        <h3>Pengajuan ({filtered.length} dari {all.length} total)</h3>
+        {filtered.length === 0 ? (
+          <div className="empty-state">Tidak ada data yang cocok dengan filter.</div>
         ) : (
           <table>
-            <thead><tr><th>No. Request</th><th>Tanggal</th><th>Total</th><th>Status</th></tr></thead>
+            <thead><tr><th>No. Request</th><th>Tanggal</th><th>Employee</th><th>Department</th><th>Total</th><th>Status</th></tr></thead>
             <tbody>
-              {all.slice().reverse().map((r) => (
+              {filtered.map((r) => (
                 <tr key={r.id}>
                   <td>{r.request_no}</td>
                   <td>{r.request_date}</td>
+                  <td>{r.profiles?.full_name || '—'}</td>
+                  <td>{r.profiles?.department || '—'}</td>
                   <td>{rupiah(r.total_amount)}</td>
                   <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
                 </tr>
