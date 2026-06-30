@@ -593,6 +593,13 @@ function Dashboard({ refreshKey }) {
     setFilterStatus('all'); setFilterDept('all'); setFilterCategory('all'); setDateFrom(''); setDateTo('')
   }
 
+  const activeChips = []
+  if (filterStatus !== 'all') activeChips.push({ key: 'status', label: STATUS_LABEL[filterStatus], clear: () => setFilterStatus('all') })
+  if (filterDept !== 'all') activeChips.push({ key: 'dept', label: filterDept, clear: () => setFilterDept('all') })
+  if (filterCategory !== 'all') activeChips.push({ key: 'cat', label: filterCategory, clear: () => setFilterCategory('all') })
+  if (dateFrom) activeChips.push({ key: 'from', label: `Dari ${dateFrom}`, clear: () => setDateFrom('') })
+  if (dateTo) activeChips.push({ key: 'to', label: `Sampai ${dateTo}`, clear: () => setDateTo('') })
+
   const totalApproved = filtered.filter((r) => r.status === 'verified').reduce((s, r) => s + Number(r.total_amount), 0)
   const outstanding = filtered.filter((r) => r.status === 'submitted').length
   const pendingFinance = filtered.filter((r) => r.status === 'approved').length
@@ -601,43 +608,56 @@ function Dashboard({ refreshKey }) {
 
   return (
     <>
-      <div className="card filter-bar">
-        <h3 style={{ marginTop: 0 }}>Filter</h3>
-        <div className="filter-row">
-          <div>
-            <label>Status</label>
+      <div className="filter-panel">
+        <div className="filter-panel-head">
+          <div className="filter-title"><span className="filter-icon">⚲</span> Filter Data</div>
+          {activeChips.length > 0 && (
+            <span className="filter-clear-all" onClick={resetFilters}>Hapus semua filter</span>
+          )}
+        </div>
+
+        <div className="filter-grid">
+          <div className="filter-field">
+            <label><span className="f-ico">●</span> Status</label>
             <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
               <option value="all">Semua Status</option>
               {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
-          <div>
-            <label>Department</label>
+          <div className="filter-field">
+            <label><span className="f-ico">▣</span> Department</label>
             <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
               <option value="all">Semua Department</option>
               {departments.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </div>
-          <div>
-            <label>Kategori Expense</label>
+          <div className="filter-field">
+            <label><span className="f-ico">◆</span> Kategori Expense</label>
             <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
               <option value="all">Semua Kategori</option>
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
-          <div>
-            <label>Dari Tanggal</label>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          </div>
-          <div>
-            <label>Sampai Tanggal</label>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-          </div>
-          <div>
-            <label>&nbsp;</label>
-            <button className="btn btn-sm" style={{ background: '#f1f3f5', color: '#333' }} onClick={resetFilters}>Reset Filter</button>
+          <div className="filter-field filter-field-date">
+            <label><span className="f-ico">▦</span> Periode</label>
+            <div className="date-range">
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <span className="date-sep">—</span>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </div>
           </div>
         </div>
+
+        {activeChips.length > 0 && (
+          <div className="chip-row">
+            {activeChips.map((c) => (
+              <span className="chip" key={c.key}>
+                {c.label}
+                <span className="chip-x" onClick={c.clear}>✕</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid-kpi">
