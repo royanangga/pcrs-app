@@ -60,6 +60,10 @@ function attachmentUrl(filePath) {
   return supabase.storage.from('receipts').getPublicUrl(filePath).data.publicUrl
 }
 
+function trackUrl(requestNo) {
+  return `${window.location.origin}/track/${encodeURIComponent(requestNo)}`
+}
+
 // ---------------------------------------------------------------- AUTH ----
 function AuthScreen() {
   const [mode, setMode] = useState('login') // login | register
@@ -335,7 +339,7 @@ function MyRequests({ profile, refreshKey }) {
                   <tr>
                     <td colSpan={5}>
                       <div className="detail-box">
-                        <QRBadge value={r.request_no} label={`QR: ${r.request_no}`} />
+                        <QRBadge value={trackUrl(r.request_no)} label={`Scan untuk lacak: ${r.request_no}`} />
                         <div>
                           <strong style={{ fontSize: 13 }}>Bukti Transaksi</strong>
                           {(attMap[r.id] || []).length === 0 ? (
@@ -523,7 +527,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
                   <tr>
                     <td colSpan={5}>
                       <div className="detail-box">
-                        <QRBadge value={r.request_no} label={`QR: ${r.request_no}`} />
+                        <QRBadge value={trackUrl(r.request_no)} label={`Scan untuk lacak: ${r.request_no}`} />
                         <div>
                           <strong style={{ fontSize: 13 }}>Checklist Verifikasi</strong>
                           <div className="checklist-line">☐ Struk/bukti sesuai nominal</div>
@@ -563,6 +567,7 @@ function Dashboard({ refreshKey }) {
   const [filterCategory, setFilterCategory] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [qrModal, setQrModal] = useState(null)
 
   useEffect(() => {
     async function load() {
@@ -673,7 +678,7 @@ function Dashboard({ refreshKey }) {
           <div className="empty-state">Tidak ada data yang cocok dengan filter.</div>
         ) : (
           <table>
-            <thead><tr><th>No. Request</th><th>Tanggal</th><th>Employee</th><th>Department</th><th>Total</th><th>Status</th></tr></thead>
+            <thead><tr><th>No. Request</th><th>Tanggal</th><th>Employee</th><th>Department</th><th>Total</th><th>Status</th><th></th></tr></thead>
             <tbody>
               {filtered.map((r) => (
                 <tr key={r.id}>
@@ -683,12 +688,33 @@ function Dashboard({ refreshKey }) {
                   <td>{r.profiles?.department || '—'}</td>
                   <td>{rupiah(r.total_amount)}</td>
                   <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
+                  <td>
+                    {r.status === 'verified' && (
+                      <button className="btn btn-primary btn-sm" onClick={() => setQrModal(r)}>Tampilkan QR</button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {qrModal && (
+        <div className="modal-overlay" onClick={() => setQrModal(null)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-close" onClick={() => setQrModal(null)}>✕</div>
+            <h3 style={{ marginTop: 0 }}>QR Siap Bayar</h3>
+            <div className="checklist-line">Scan untuk verifikasi sebelum pembayaran cash</div>
+            <div style={{ display: 'flex', justifyContent: 'center', margin: '16px 0' }}>
+              <QRBadge value={trackUrl(qrModal.request_no)} size={180} label={qrModal.request_no} />
+            </div>
+            <div className="track-row"><span>Employee</span><strong>{qrModal.profiles?.full_name || '—'}</strong></div>
+            <div className="track-row"><span>Department</span><strong>{qrModal.profiles?.department || '—'}</strong></div>
+            <div className="track-row"><span>Total</span><strong>{rupiah(qrModal.total_amount)}</strong></div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
