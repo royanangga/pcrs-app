@@ -67,12 +67,8 @@ function trackUrl(requestNo) {
 
 // ---------------------------------------------------------------- AUTH ----
 export function AuthScreen() {
-  const [mode, setMode] = useState('login') // login | register
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [fullName, setFullName] = useState('')
-  const [department, setDepartment] = useState('Finance')
-  const [role, setRole] = useState('employee')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -80,58 +76,30 @@ export function AuthScreen() {
     e.preventDefault()
     setError('')
     setLoading(true)
-    if (mode === 'login') {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) setError(error.message)
-    } else {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { full_name: fullName, department, role } },
-      })
-      if (error) setError(error.message)
-      else setError('Akun dibuat. Cek email Anda untuk verifikasi, lalu login.')
-    }
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) setError('Email atau password salah.')
     setLoading(false)
   }
 
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={handleSubmit}>
-        <h2>PCRS</h2>
+        <div className="login-logo">PCRS</div>
+        <h2 style={{ margin: '8px 0 4px' }}>Selamat Datang</h2>
         <div className="sub">Petty Cash Reimbursement System</div>
 
-        {mode === 'register' && (
-          <>
-            <label>Nama Lengkap</label>
-            <input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
-            <label>Department</label>
-            <input value={department} onChange={(e) => setDepartment(e.target.value)} required />
-            <label>Role</label>
-            <select value={role} onChange={(e) => setRole(e.target.value)}>
-              <option value="employee">Employee</option>
-              <option value="supervisor">Supervisor</option>
-              <option value="manager">Manager</option>
-              <option value="finance_staff">Finance Staff</option>
-              <option value="finance_manager">Finance Manager</option>
-            </select>
-          </>
-        )}
-
         <label>Email</label>
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="email@perusahaan.com" />
         <label>Password</label>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} placeholder="••••••••" />
 
         {error && <div className="error-text">{error}</div>}
 
         <button className="btn btn-primary" style={{ width: '100%', marginTop: 16 }} disabled={loading}>
-          {loading ? 'Memproses...' : mode === 'login' ? 'Login' : 'Daftar'}
+          {loading ? 'Masuk...' : 'Login'}
         </button>
 
-        <div className="toggle-link" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}>
-          {mode === 'login' ? 'Belum punya akun? Daftar' : 'Sudah punya akun? Login'}
-        </div>
+        <div className="login-note">Belum punya akun? Hubungi Admin untuk mendaftar.</div>
       </form>
     </div>
   )
