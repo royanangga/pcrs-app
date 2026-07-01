@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import QRCode from 'qrcode'
 import { supabase } from './supabaseClient'
+import AdminPanel from './AdminPanel.jsx'
 
 const CATEGORIES = ['Transport', 'Meal', 'Office Supplies', 'Communication', 'Accommodation', 'Other']
 
@@ -372,6 +373,8 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
   const [rows, setRows] = useState([])
   const [names, setNames] = useState({})
   const [noteDraft, setNoteDraft] = useState({})
+  const [confirm, setConfirm] = useState(null) // { row, action }
+  const [processing, setProcessing] = useState(false)
 
   const canSeeAll = profile.role === 'finance_manager' || profile.role === 'admin'
 
@@ -386,15 +389,21 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
         const ids = [...new Set(data.map((r) => r.employee_id))]
         const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids)
         const map = {}
-        (profs || []).forEach((p) => { map[p.id] = p.full_name })
+        ;(profs || []).forEach((p) => { map[p.id] = p.full_name })
         setNames(map)
       }
     }
     load()
   }, [profile.role, refreshKey, canSeeAll])
 
-  async function act(row, action) {
+  function requestAct(row, action) {
+    setConfirm({ row, action })
+  }
+
+  async function confirmAct() {
+    const { row, action } = confirm
     const newStatus = action === 'approved' ? 'approved' : action === 'rejected' ? 'rejected' : 'revision'
+    setProcessing(true)
     await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
     await supabase.from('approval_history').insert({
       reimbursement_id: row.id,
@@ -402,43 +411,95 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
       action: newStatus,
       notes: noteDraft[row.id] || null,
     })
+    setProcessing(false)
+    setConfirm(null)
     onActed && onActed()
   }
 
+  const ACTION_META = {
+    approved: { label: 'Approve', color: 'var(--success)', icon: '✓', desc: 'Pengajuan akan diteruskan ke Finance Verification.' },
+    rejected: { label: 'Reject', color: 'var(--danger)', icon: '✕', desc: 'Pengajuan akan ditolak dan employee akan diberitahu.' },
+    revision: { label: 'Kembalikan untuk Revisi', color: '#b35900', icon: '↩', desc: 'Pengajuan dikembalikan ke employee untuk diperbaiki.' },
+  }
+
   return (
-    <div className="card">
-      <h3>Antrian Approval {canSeeAll ? '(Semua level)' : `(Level: ${profile.role})`}</h3>
-      {rows.length === 0 ? (
-        <div className="empty-state">Tidak ada pengajuan menunggu approval Anda.</div>
-      ) : (
-        <table>
-          <thead>
-            <tr><th>No. Request</th><th>Employee</th><th>Total</th><th>Note</th><th>Aksi</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id}>
-                <td>{r.request_no}</td>
-                <td>{names[r.employee_id] || '—'}</td>
-                <td>{rupiah(r.total_amount)}</td>
-                <td style={{ minWidth: 160 }}>
-                  <input
-                    placeholder="Catatan (opsional)"
-                    value={noteDraft[r.id] || ''}
-                    onChange={(e) => setNoteDraft({ ...noteDraft, [r.id]: e.target.value })}
-                  />
-                </td>
-                <td style={{ whiteSpace: 'nowrap' }}>
-                  <button className="btn btn-success btn-sm" onClick={() => act(r, 'approved')}>Approve</button>{' '}
-                  <button className="btn btn-danger btn-sm" onClick={() => act(r, 'rejected')}>Reject</button>{' '}
-                  <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => act(r, 'revision')}>Revisi</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <>
+      <div className="card">
+        <h3>Antrian Approval {canSeeAll ? '(Semua level)' : `(Level: ${profile.role})`}</h3>
+        {rows.length === 0 ? (
+          <div className="empty-state">Tidak ada pengajuan menunggu approval Anda.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr><th>No. Request</th><th>Employee</th><th>Total</th><th>Catatan</th><th>Aksi</th></tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.request_no}</td>
+                  <td>{names[r.employee_id] || '—'}</td>
+                  <td>{rupiah(r.total_amount)}</td>
+                  <td style={{ minWidth: 160 }}>
+                    <input
+                      placeholder="Catatan (opsional)"
+                      value={noteDraft[r.id] || ''}
+                      onChange={(e) => setNoteDraft({ ...noteDraft, [r.id]: e.target.value })}
+                    />
+                  </td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn btn-success btn-sm" onClick={() => requestAct(r, 'approved')}>✓ Approve</button>{' '}
+                    <button className="btn btn-danger btn-sm" onClick={() => requestAct(r, 'rejected')}>✕ Reject</button>{' '}
+                    <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => requestAct(r, 'revision')}>↩ Revisi</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {confirm && (
+        <div className="modal-overlay" onClick={() => !processing && setConfirm(null)}>
+          <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-icon" style={{ color: ACTION_META[confirm.action].color }}>
+              {ACTION_META[confirm.action].icon}
+            </div>
+            <h3 className="confirm-title">
+              Konfirmasi {ACTION_META[confirm.action].label}
+            </h3>
+            <p className="confirm-desc">{ACTION_META[confirm.action].desc}</p>
+
+            <div className="confirm-detail">
+              <div className="confirm-row"><span>No. Request</span><strong>{confirm.row.request_no}</strong></div>
+              <div className="confirm-row"><span>Employee</span><strong>{names[confirm.row.employee_id] || '—'}</strong></div>
+              <div className="confirm-row"><span>Total</span><strong>{rupiah(confirm.row.total_amount)}</strong></div>
+              {noteDraft[confirm.row.id] && (
+                <div className="confirm-row"><span>Catatan</span><strong>{noteDraft[confirm.row.id]}</strong></div>
+              )}
+            </div>
+
+            <div className="confirm-actions">
+              <button
+                className="btn"
+                style={{ background: '#f1f3f5', color: '#333', flex: 1 }}
+                onClick={() => setConfirm(null)}
+                disabled={processing}
+              >
+                Batal
+              </button>
+              <button
+                className="btn"
+                style={{ background: ACTION_META[confirm.action].color, color: '#fff', flex: 1 }}
+                onClick={confirmAct}
+                disabled={processing}
+              >
+                {processing ? 'Memproses...' : `Ya, ${ACTION_META[confirm.action].label}`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
-    </div>
+    </>
   )
 }
 
@@ -768,6 +829,9 @@ export default function App() {
         {isFinance && (
           <div className={`tab ${tab === 'finance' ? 'active' : ''}`} onClick={() => setTab('finance')}>Finance Verification</div>
         )}
+        {profile.role === 'admin' && (
+          <div className={`tab ${tab === 'admin' ? 'active' : ''}`} onClick={() => setTab('admin')} style={{ marginLeft: 'auto', color: tab === 'admin' ? 'var(--teal)' : '#b35900' }}>⚙️ Admin Panel</div>
+        )}
       </div>
 
       <div className="container">
@@ -776,6 +840,7 @@ export default function App() {
         {tab === 'mine' && <MyRequests profile={profile} refreshKey={refreshKey} />}
         {tab === 'approval' && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
         {tab === 'finance' && isFinance && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
+        {tab === 'admin' && profile.role === 'admin' && <AdminPanel />}
       </div>
     </div>
   )
