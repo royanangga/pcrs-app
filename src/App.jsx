@@ -96,7 +96,7 @@ export function AuthScreen() {
         {error && <div className="error-text">{error}</div>}
 
         <button className="btn btn-primary" style={{ width: '100%', marginTop: 16 }} disabled={loading}>
-          {loading ? 'Masuk...' : 'Login'}
+          {loading ? <><span className="spinner" />Masuk...</> : 'Login'}
         </button>
 
         <div className="login-note">Belum punya akun? Hubungi Admin untuk mendaftar.</div>
@@ -250,7 +250,7 @@ function SubmitForm({ profile, onSubmitted }) {
         {msg && <div className="error-text" style={{ color: msg.startsWith('Berhasil') ? 'var(--success)' : 'var(--danger)' }}>{msg}</div>}
 
         <button className="btn btn-primary" style={{ marginTop: 14 }} disabled={saving}>
-          {saving ? 'Mengirim...' : 'Submit Reimbursement'}
+          {saving ? <><span className="spinner" />Mengirim...</> : 'Submit Reimbursement'}
         </button>
       </form>
     </div>
@@ -258,19 +258,39 @@ function SubmitForm({ profile, onSubmitted }) {
 }
 
 // ---------------------------------------------------------------- MY REQUESTS ----
+function SkeletonTable({ cols = 4, rows = 4 }) {
+  return (
+    <table>
+      <thead><tr>{Array(cols).fill(0).map((_, i) => <th key={i}><div className="skeleton-row short" /></th>)}</tr></thead>
+      <tbody>
+        {Array(rows).fill(0).map((_, i) => (
+          <tr key={i}>
+            {Array(cols).fill(0).map((_, j) => (
+              <td key={j}><div className={`skeleton-row ${j % 2 === 0 ? 'medium' : 'short'}`} /></td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
 function MyRequests({ profile, refreshKey }) {
   const [rows, setRows] = useState([])
+  const [loadingData, setLoadingData] = useState(true)
   const [openId, setOpenId] = useState(null)
   const [attMap, setAttMap] = useState({})
 
   useEffect(() => {
     async function load() {
+      setLoadingData(true)
       const { data } = await supabase
         .from('reimbursements')
         .select('*')
         .eq('employee_id', profile.id)
         .order('created_at', { ascending: false })
       setRows(data || [])
+      setLoadingData(false)
     }
     load()
   }, [profile.id, refreshKey])
@@ -287,7 +307,7 @@ function MyRequests({ profile, refreshKey }) {
   return (
     <div className="card">
       <h3>Pengajuan Saya</h3>
-      {rows.length === 0 ? (
+      {loadingData ? <SkeletonTable cols={5} rows={4} /> : rows.length === 0 ? (
         <div className="empty-state">Belum ada pengajuan.</div>
       ) : (
         <table>
@@ -461,7 +481,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
                 onClick={confirmAct}
                 disabled={processing}
               >
-                {processing ? 'Memproses...' : `Ya, ${ACTION_META[confirm.action].label}`}
+                {processing ? <><span className="spinner" />{`${ACTION_META[confirm.action].label}...`}</> : `Ya, ${ACTION_META[confirm.action].label}`}
               </button>
             </div>
           </div>
@@ -591,6 +611,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
 // ---------------------------------------------------------------- DASHBOARD ----
 function Dashboard({ refreshKey, profile }) {
   const [all, setAll] = useState([])
+  const [loadingData, setLoadingData] = useState(true)
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterDept, setFilterDept] = useState('all')
   const [filterCategory, setFilterCategory] = useState('all')
@@ -600,11 +621,13 @@ function Dashboard({ refreshKey, profile }) {
 
   useEffect(() => {
     async function load() {
+      setLoadingData(true)
       const { data } = await supabase
         .from('reimbursements')
         .select('*, profiles(full_name, department), reimbursement_items(category)')
         .order('created_at', { ascending: false })
       setAll(data || [])
+      setLoadingData(false)
     }
     load()
   }, [refreshKey])
@@ -695,15 +718,22 @@ function Dashboard({ refreshKey, profile }) {
       </div>
 
       <div className="grid-kpi">
-        <div className="kpi-box"><div className="label">Total Reimbursement Terverifikasi</div><div className="value">{rupiah(totalApproved)}</div></div>
-        <div className="kpi-box"><div className="label">Menunggu Approval</div><div className="value">{outstanding}</div></div>
-        <div className="kpi-box"><div className="label">Menunggu Finance Verification</div><div className="value">{pendingFinance}</div></div>
-        <div className="kpi-box"><div className="label">Terverifikasi</div><div className="value">{verifiedCount}</div></div>
-        <div className="kpi-box"><div className="label">Rejected</div><div className="value">{rejectedCount}</div></div>
+        {loadingData ? Array(5).fill(0).map((_, i) => (
+          <div className="kpi-box" key={i}>
+            <div className="skeleton-row short" style={{ marginBottom: 8 }} />
+            <div className="skeleton-row medium" style={{ height: 28 }} />
+          </div>
+        )) : <>
+          <div className="kpi-box"><div className="label">Total Reimbursement Terverifikasi</div><div className="value">{rupiah(totalApproved)}</div></div>
+          <div className="kpi-box"><div className="label">Menunggu Approval</div><div className="value">{outstanding}</div></div>
+          <div className="kpi-box"><div className="label">Menunggu Finance Verification</div><div className="value">{pendingFinance}</div></div>
+          <div className="kpi-box"><div className="label">Terverifikasi</div><div className="value">{verifiedCount}</div></div>
+          <div className="kpi-box"><div className="label">Rejected</div><div className="value">{rejectedCount}</div></div>
+        </>}
       </div>
       <div className="card">
         <h3>Pengajuan ({filtered.length} dari {all.length} total)</h3>
-        {filtered.length === 0 ? (
+        {loadingData ? <SkeletonTable cols={6} rows={5} /> : filtered.length === 0 ? (
           <div className="empty-state">Tidak ada data yang cocok dengan filter.</div>
         ) : (
           <table>
@@ -772,7 +802,14 @@ export default function App() {
   }, [session])
 
   if (!session) return <AuthScreen />
-  if (!profile) return <div className="container">Memuat profil...</div>
+  if (!profile) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
+      <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+        <div style={{ width: 36, height: 36, border: '3px solid #e3e6ea', borderTopColor: 'var(--teal)', borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 12px' }} />
+        Memuat profil...
+      </div>
+    </div>
+  )
 
   const isApprover = ['supervisor', 'manager', 'finance_manager', 'admin'].includes(profile.role)
   const isFinance = ['finance_staff', 'finance_manager', 'admin'].includes(profile.role)
@@ -803,12 +840,14 @@ export default function App() {
       </div>
 
       <div className="container">
-        {tab === 'dashboard' && <Dashboard refreshKey={refreshKey} profile={profile} />}
-        {tab === 'submit' && <SubmitForm profile={profile} onSubmitted={bump} />}
-        {tab === 'mine' && <MyRequests profile={profile} refreshKey={refreshKey} />}
-        {tab === 'approval' && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
-        {tab === 'finance' && isFinance && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
-        {tab === 'admin' && profile.role === 'admin' && <AdminPanel />}
+        <div className="tab-content" key={tab}>
+          {tab === 'dashboard' && <Dashboard refreshKey={refreshKey} profile={profile} />}
+          {tab === 'submit' && <SubmitForm profile={profile} onSubmitted={bump} />}
+          {tab === 'mine' && <MyRequests profile={profile} refreshKey={refreshKey} />}
+          {tab === 'approval' && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
+          {tab === 'finance' && isFinance && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
+          {tab === 'admin' && profile.role === 'admin' && <AdminPanel />}
+        </div>
       </div>
     </div>
   )
