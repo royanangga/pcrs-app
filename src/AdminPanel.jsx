@@ -18,74 +18,192 @@ function rupiah(n) {
   return 'Rp ' + Number(n || 0).toLocaleString('id-ID')
 }
 
+// Panggil Edge Function admin-user-ops
+async function callAdminOps(session, payload) {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+  const res = await fetch(`${supabaseUrl}/functions/v1/admin-user-ops`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify(payload),
+  })
+  return res.json()
+}
+
 // ---- sub-tab: USER MANAGEMENT ----
 function AdminUsers() {
   const [users, setUsers] = useState([])
+  const [session, setSession] = useState(null)
   const [editing, setEditing] = useState(null)
-  const [form, setForm] = useState({})
-  const [msg, setMsg] = useState('')
+  const [editForm, setEditForm] = useState({})
+  const [showCreate, setShowCreate] = useState(false)
+  const [createForm, setCreateForm] = useState({ full_name: '', email: '', password: '', department: '', role: 'employee' })
+  const [pwModal, setPwModal] = useState(null)  // { id, email }
+  const [newPw, setNewPw] = useState('')
+  const [msg, setMsg] = useState({ text: '', type: '' })
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+  }, [])
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from('profiles').select('*').order('full_name')
-    setUsers(data || [])
+    const { data, error } = await supabase.rpc('admin_get_users')
+    if (error) setMsg({ text: 'Gagal memuat: ' + error.message, type: 'error' })
+    else setUsers(data || [])
   }, [])
 
   useEffect(() => { load() }, [load])
 
   function startEdit(u) {
     setEditing(u.id)
-    setForm({ full_name: u.full_name, department: u.department, role: u.role })
-    setMsg('')
+    setEditForm({ full_name: u.full_name, department: u.department, role: u.role, email: u.email })
+    setMsg({ text: '', type: '' })
   }
 
-  async function saveEdit(id) {
-    const { error } = await supabase.from('profiles').update(form).eq('id', id)
-    if (error) { setMsg('Error: ' + error.message); return }
+  async function saveEdit(u) {
+    setLoading(true)
+    // Update profil
+    const { error: pErr } = await supabase.from('profiles').update({
+      full_name: editForm.full_name,
+      department: editForm.department,
+      role: editForm.role,
+    }).eq('id', u.id)
+
+    // Update email kalau berubah
+    if (!pErr && editForm.email !== u.email) {
+      const result = await callAdminOps(session, { action: 'update_email', user_id: u.id, new_email: editForm.email })
+      if (result.error) { setMsg({ text: 'Error update email: ' + result.error, type: 'error' }); setLoading(false); return }
+    }
+
+    if (pErr) { setMsg({ text: 'Error: ' + pErr.message, type: 'error' }); setLoading(false); return }
     setEditing(null)
-    setMsg('User berhasil diupdate.')
+    setMsg({ text: `User "${editForm.full_name}" berhasil diupdate.`, type: 'ok' })
+    setLoading(false)
     load()
   }
 
+  async function handleCreateUser(e) {
+    e.preventDefault()
+    if (!session) return
+    setLoading(true)
+    setMsg({ text: '', type: '' })
+    const result = await callAdminOps(session, { action: 'create_user', ...createForm })
+    if (result.error) {
+      setMsg({ text: 'Gagal buat akun: ' + result.error, type: 'error' })
+    } else {
+      setMsg({ text: `Akun "${createForm.full_name}" berhasil dibuat.`, type: 'ok' })
+      setShowCreate(false)
+      setCreateForm({ full_name: '', email: '', password: '', department: '', role: 'employee' })
+      load()
+    }
+    setLoading(false)
+  }
+
+  async function handleResetPw(e) {
+    e.preventDefault()
+    if (!session || newPw.length < 6) return
+    setLoading(true)
+    const result = await callAdminOps(session, { action: 'update_password', user_id: pwModal.id, new_password: newPw })
+    if (result.error) {
+      setMsg({ text: 'Gagal reset password: ' + result.error, type: 'error' })
+    } else {
+      setMsg({ text: `Password "${pwModal.email}" berhasil direset.`, type: 'ok' })
+      setPwModal(null)
+      setNewPw('')
+    }
+    setLoading(false)
+  }
+
   async function deleteUser(id, name) {
-    if (!window.confirm(`Hapus user "${name}"? Semua pengajuan terkait juga akan terpengaruh.`)) return
+    if (!window.confirm(`Hapus user "${name}"? Aksi ini tidak bisa dibatalkan.`)) return
     const { error } = await supabase.from('profiles').delete().eq('id', id)
-    if (error) { setMsg('Error: ' + error.message); return }
-    setMsg('User dihapus.')
+    if (error) { setMsg({ text: 'Error: ' + error.message, type: 'error' }); return }
+    setMsg({ text: `User "${name}" dihapus.`, type: 'ok' })
     load()
   }
 
   return (
     <div>
-      <h3 className="admin-section-title">👥 Manajemen User</h3>
-      {msg && <div className="admin-msg">{msg}</div>}
-      <table>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
+        <h3 className="admin-section-title" style={{ margin: 0, border: 'none', padding: 0 }}>👥 Manajemen User ({users.length})</h3>
+        <button className="btn btn-primary btn-sm" onClick={() => { setShowCreate(!showCreate); setMsg({ text: '', type: '' }) }}>
+          {showCreate ? 'Tutup' : '+ Buat Akun Baru'}
+        </button>
+      </div>
+
+      {msg.text && (
+        <div className="admin-msg" style={{ background: msg.type === 'error' ? '#fbe2df' : '#d9f4e3', borderColor: msg.type === 'error' ? '#c0392b' : '#1f8a4c', color: msg.type === 'error' ? '#c0392b' : '#1f8a4c' }}>
+          {msg.text}
+        </div>
+      )}
+
+      {showCreate && (
+        <form className="admin-create-form" onSubmit={handleCreateUser}>
+          <h4 style={{ margin: '0 0 12px', color: 'var(--navy)' }}>Buat Akun Baru</h4>
+          <div className="admin-form-grid">
+            <div>
+              <label>Nama Lengkap</label>
+              <input value={createForm.full_name} onChange={(e) => setCreateForm({ ...createForm, full_name: e.target.value })} required />
+            </div>
+            <div>
+              <label>Email</label>
+              <input type="email" value={createForm.email} onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })} required />
+            </div>
+            <div>
+              <label>Password (min. 6 karakter)</label>
+              <input type="password" value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} required minLength={6} />
+            </div>
+            <div>
+              <label>Department</label>
+              <input value={createForm.department} onChange={(e) => setCreateForm({ ...createForm, department: e.target.value })} required />
+            </div>
+            <div>
+              <label>Role</label>
+              <select value={createForm.role} onChange={(e) => setCreateForm({ ...createForm, role: e.target.value })}>
+                {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+          </div>
+          <button className="btn btn-primary btn-sm" style={{ marginTop: 10 }} disabled={loading}>
+            {loading ? 'Memproses...' : 'Buat Akun'}
+          </button>
+        </form>
+      )}
+
+      <table style={{ marginTop: 12 }}>
         <thead>
-          <tr><th>Nama</th><th>Department</th><th>Role</th><th>Aksi</th></tr>
+          <tr><th>Nama</th><th>Email</th><th>Department</th><th>Role</th><th>Aksi</th></tr>
         </thead>
         <tbody>
           {users.map((u) => (
             <tr key={u.id}>
               {editing === u.id ? (
                 <>
-                  <td><input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></td>
-                  <td><input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></td>
+                  <td><input value={editForm.full_name} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} /></td>
+                  <td><input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} /></td>
+                  <td><input value={editForm.department} onChange={(e) => setEditForm({ ...editForm, department: e.target.value })} /></td>
                   <td>
-                    <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                    <select value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}>
                       {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
-                    <button className="btn btn-success btn-sm" onClick={() => saveEdit(u.id)}>Simpan</button>{' '}
+                    <button className="btn btn-success btn-sm" onClick={() => saveEdit(u)} disabled={loading}>Simpan</button>{' '}
                     <button className="btn btn-sm" style={{ background: '#eee' }} onClick={() => setEditing(null)}>Batal</button>
                   </td>
                 </>
               ) : (
                 <>
                   <td>{u.full_name}</td>
+                  <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{u.email}</td>
                   <td>{u.department}</td>
                   <td><span className="admin-role-badge">{u.role}</span></td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="btn btn-sm" style={{ background: '#e8f0fe', color: '#1a56db' }} onClick={() => startEdit(u)}>Edit</button>{' '}
+                    <button className="btn btn-sm" style={{ background: '#fff3cd', color: '#664d03' }} onClick={() => { setPwModal({ id: u.id, email: u.email }); setNewPw('') }}>Reset PW</button>{' '}
                     <button className="btn btn-danger btn-sm" onClick={() => deleteUser(u.id, u.full_name)}>Hapus</button>
                   </td>
                 </>
@@ -94,6 +212,26 @@ function AdminUsers() {
           ))}
         </tbody>
       </table>
+
+      {pwModal && (
+        <div className="modal-overlay" onClick={() => setPwModal(null)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-close" onClick={() => setPwModal(null)}>✕</div>
+            <h3 style={{ marginTop: 0 }}>Reset Password</h3>
+            <div className="checklist-line" style={{ marginBottom: 12 }}>{pwModal.email}</div>
+            <form onSubmit={handleResetPw}>
+              <label>Password Baru (min. 6 karakter)</label>
+              <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} required minLength={6} autoFocus />
+              <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                <button type="button" className="btn btn-sm" style={{ background: '#eee', flex: 1 }} onClick={() => setPwModal(null)}>Batal</button>
+                <button type="submit" className="btn btn-primary btn-sm" style={{ flex: 1 }} disabled={loading || newPw.length < 6}>
+                  {loading ? 'Memproses...' : 'Simpan Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
