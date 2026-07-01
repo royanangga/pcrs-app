@@ -619,18 +619,32 @@ function Dashboard({ refreshKey, profile }) {
   const [dateTo, setDateTo] = useState('')
   const [qrModal, setQrModal] = useState(null)
 
+  const isFinanceOrAdmin = ['finance_staff', 'finance_manager', 'admin'].includes(profile.role)
+
   useEffect(() => {
     async function load() {
       setLoadingData(true)
-      const { data } = await supabase
+      let query = supabase
         .from('reimbursements')
         .select('*, profiles(full_name, department), reimbursement_items(category)')
         .order('created_at', { ascending: false })
-      setAll(data || [])
+
+      // Bukan finance/admin: hanya tampilkan department sendiri
+      if (!isFinanceOrAdmin) {
+        query = query.eq('profiles.department', profile.department)
+      }
+
+      const { data } = await query
+      // Filter tambahan di client untuk non-finance (karena eq pada join tidak cukup di Supabase)
+      const result = isFinanceOrAdmin
+        ? (data || [])
+        : (data || []).filter((r) => r.profiles?.department === profile.department)
+
+      setAll(result)
       setLoadingData(false)
     }
     load()
-  }, [refreshKey])
+  }, [refreshKey, isFinanceOrAdmin, profile.department])
 
   const departments = [...new Set(all.map((r) => r.profiles?.department).filter(Boolean))]
 
@@ -683,9 +697,9 @@ function Dashboard({ refreshKey, profile }) {
           </div>
           <div className="filter-field">
             <label><span className="f-ico">▣</span> Department</label>
-            <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
-              <option value="all">Semua Department</option>
-              {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+            <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)} disabled={!isFinanceOrAdmin} style={{ opacity: isFinanceOrAdmin ? 1 : 0.45 }}>
+              <option value="all">{isFinanceOrAdmin ? 'Semua Department' : profile.department}</option>
+              {isFinanceOrAdmin && departments.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </div>
           <div className="filter-field">
@@ -732,7 +746,10 @@ function Dashboard({ refreshKey, profile }) {
         </>}
       </div>
       <div className="card">
-        <h3>Pengajuan ({filtered.length} dari {all.length} total)</h3>
+        <h3>
+          Pengajuan {isFinanceOrAdmin ? '' : `— Dept. ${profile.department} `}
+          ({filtered.length} dari {all.length} total)
+        </h3>
         {loadingData ? <SkeletonTable cols={6} rows={5} /> : filtered.length === 0 ? (
           <div className="empty-state">Tidak ada data yang cocok dengan filter.</div>
         ) : (
@@ -835,20 +852,3 @@ export default function App() {
           <div className={`tab ${tab === 'finance' ? 'active' : ''}`} onClick={() => setTab('finance')}>Finance Verification</div>
         )}
         {profile.role === 'admin' && (
-          <div className={`tab ${tab === 'admin' ? 'active' : ''}`} onClick={() => setTab('admin')} style={{ marginLeft: 'auto', color: tab === 'admin' ? 'var(--teal)' : '#b35900' }}>⚙️ Admin Panel</div>
-        )}
-      </div>
-
-      <div className="container">
-        <div className="tab-content" key={tab}>
-          {tab === 'dashboard' && <Dashboard refreshKey={refreshKey} profile={profile} />}
-          {tab === 'submit' && <SubmitForm profile={profile} onSubmitted={bump} />}
-          {tab === 'mine' && <MyRequests profile={profile} refreshKey={refreshKey} />}
-          {tab === 'approval' && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
-          {tab === 'finance' && isFinance && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
-          {tab === 'admin' && profile.role === 'admin' && <AdminPanel />}
-        </div>
-      </div>
-    </div>
-  )
-}
