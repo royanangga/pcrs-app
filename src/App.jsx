@@ -359,30 +359,47 @@ function MyRequests({ profile, refreshKey }) {
 // ---------------------------------------------------------------- APPROVAL ----
 function ApprovalQueue({ profile, refreshKey, onActed }) {
   const [rows, setRows] = useState([])
-  const [names, setNames] = useState({})
+  const [empProfiles, setEmpProfiles] = useState({}) // id -> { full_name, department }
   const [noteDraft, setNoteDraft] = useState({})
-  const [confirm, setConfirm] = useState(null) // { row, action }
+  const [selected, setSelected] = useState([])         // array of row.id
+  const [bulkNote, setBulkNote] = useState('')
+  const [confirm, setConfirm] = useState(null)         // single: { row, action }
+  const [bulkConfirm, setBulkConfirm] = useState(null) // bulk: { action }
   const [processing, setProcessing] = useState(false)
 
+  // Finance Manager dan Admin: lihat semua departemen, semua level
   const canSeeAll = profile.role === 'finance_manager' || profile.role === 'admin'
 
   useEffect(() => {
     async function load() {
-      let query = supabase.from('reimbursements').select('*').eq('status', 'submitted')
-      if (!canSeeAll) query = query.eq('required_role', profile.role)
-      const { data } = await query.order('created_at', { ascending: true })
-      setRows(data || [])
+      // Ambil semua reimbursement status submitted, beserta data department karyawan
+      let query = supabase
+        .from('reimbursements')
+        .select('*, profiles(id, full_name, department)')
+        .eq('status', 'submitted')
 
-      if (data && data.length) {
-        const ids = [...new Set(data.map((r) => r.employee_id))]
-        const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids)
-        const map = {}
-        ;(profs || []).forEach((p) => { map[p.id] = p.full_name })
-        setNames(map)
-      }
+      // Kalau bukan finance_manager/admin: batasi ke role yang sesuai dulu
+      if (!canSeeAll) query = query.eq('required_role', profile.role)
+
+      const { data } = await query.order('created_at', { ascending: true })
+
+      // Filter tambahan di client: kalau bukan canSeeAll,
+      // hanya tampilkan pengajuan dari departemen yang sama
+      const filtered = canSeeAll
+        ? (data || [])
+        : (data || []).filter((r) => r.profiles?.department === profile.department)
+
+      setRows(filtered)
+
+      // Simpan map profil untuk ditampilkan di tabel & modal
+      const map = {}
+      ;(filtered).forEach((r) => {
+        if (r.profiles) map[r.employee_id] = r.profiles
+      })
+      setEmpProfiles(map)
     }
     load()
-  }, [profile.role, refreshKey, canSeeAll])
+  }, [profile.role, profile.department, refreshKey, canSeeAll])
 
   function requestAct(row, action) {
     setConfirm({ row, action })
@@ -404,30 +421,106 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
     onActed && onActed()
   }
 
+  // ---- Select helpers ----
+  const allSelected = rows.length > 0 && selected.length === rows.length
+  const someSelected = selected.length > 0 && selected.length < rows.length
+
+  function toggleOne(id) {
+    setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
+  }
+  function toggleAll() {
+    setSelected(allSelected ? [] : rows.map((r) => r.id))
+  }
+
+  // ---- Bulk confirm action ----
+  async function confirmBulkAct() {
+    const { action } = bulkConfirm
+    const newStatus = action === 'approved' ? 'approved' : action === 'rejected' ? 'rejected' : 'revision'
+    setProcessing(true)
+    for (const id of selected) {
+      await supabase.from('reimbursements').update({ status: newStatus }).eq('id', id)
+      await supabase.from('approval_history').insert({
+        reimbursement_id: id,
+        approver_id: profile.id,
+        action: newStatus,
+        notes: bulkNote || `Bulk ${action}`,
+      })
+    }
+    setProcessing(false)
+    setBulkConfirm(null)
+    setSelected([])
+    setBulkNote('')
+    onActed && onActed()
+  }
+
   const ACTION_META = {
     approved: { label: 'Approve', color: 'var(--success)', icon: '✓', desc: 'Pengajuan akan diteruskan ke Finance Verification.' },
     rejected: { label: 'Reject', color: 'var(--danger)', icon: '✕', desc: 'Pengajuan akan ditolak dan employee akan diberitahu.' },
     revision: { label: 'Kembalikan untuk Revisi', color: '#b35900', icon: '↩', desc: 'Pengajuan dikembalikan ke employee untuk diperbaiki.' },
   }
 
+  const queueLabel = canSeeAll
+    ? 'Semua Departemen'
+    : `Dept. ${profile.department} — Level: ${profile.role}`
+
   return (
     <>
       <div className="card">
-        <h3>Antrian Approval {canSeeAll ? '(Semua level)' : `(Level: ${profile.role})`}</h3>
+        <h3>Antrian Approval <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 13 }}>({queueLabel})</span></h3>
+
+        {/* Bulk action bar — muncul saat ada yang dipilih */}
+        {selected.length > 0 && (
+          <div className="bulk-bar">
+            <span className="bulk-count">{selected.length} pengajuan dipilih</span>
+            <div className="bulk-actions">
+              <input
+                className="bulk-note-input"
+                placeholder="Catatan bulk (opsional)"
+                value={bulkNote}
+                onChange={(e) => setBulkNote(e.target.value)}
+              />
+              <button className="btn btn-success btn-sm" onClick={() => setBulkConfirm({ action: 'approved' })}>✓ Approve Semua</button>
+              <button className="btn btn-danger btn-sm" onClick={() => setBulkConfirm({ action: 'rejected' })}>✕ Reject Semua</button>
+              <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => setBulkConfirm({ action: 'revision' })}>↩ Revisi Semua</button>
+              <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} onClick={() => setSelected([])}>Batal Pilih</button>
+            </div>
+          </div>
+        )}
+
         {rows.length === 0 ? (
-          <div className="empty-state">Tidak ada pengajuan menunggu approval Anda.</div>
+          <div className="empty-state">Tidak ada pengajuan dari departemen Anda yang menunggu approval.</div>
         ) : (
           <table>
             <thead>
-              <tr><th>No. Request</th><th>Employee</th><th>Total</th><th>Catatan</th><th>Aksi</th></tr>
+              <tr>
+                <th style={{ width: 36 }}>
+                  <input
+                    type="checkbox"
+                    style={{ width: 15, height: 15, cursor: 'pointer' }}
+                    checked={allSelected}
+                    ref={(el) => { if (el) el.indeterminate = someSelected }}
+                    onChange={toggleAll}
+                  />
+                </th>
+                <th>No. Request</th><th>Employee</th><th>Departemen</th><th>Total</th><th>Catatan</th><th>Aksi</th>
+              </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id}>
+                <tr key={r.id} className={selected.includes(r.id) ? 'row-selected' : ''}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      style={{ width: 15, height: 15, cursor: 'pointer' }}
+                      checked={selected.includes(r.id)}
+                      onChange={() => toggleOne(r.id)}
+                    />
+                  </td>
                   <td>{r.request_no}</td>
-                  <td>{names[r.employee_id] || '—'}</td>
+                  <td>{empProfiles[r.employee_id]?.full_name || '—'}</td>
+                  <td><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{empProfiles[r.employee_id]?.department || '—'}</span></td>
                   <td>{rupiah(r.total_amount)}</td>
-                  <td style={{ minWidth: 160 }}>
+                  <td style={{ minWidth: 150 }}>
                     <input
                       placeholder="Catatan (opsional)"
                       value={noteDraft[r.id] || ''}
@@ -435,9 +528,9 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
                     />
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
-                    <button className="btn btn-success btn-sm" onClick={() => requestAct(r, 'approved')}>✓ Approve</button>{' '}
-                    <button className="btn btn-danger btn-sm" onClick={() => requestAct(r, 'rejected')}>✕ Reject</button>{' '}
-                    <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => requestAct(r, 'revision')}>↩ Revisi</button>
+                    <button className="btn btn-success btn-sm" onClick={() => requestAct(r, 'approved')}>✓</button>{' '}
+                    <button className="btn btn-danger btn-sm" onClick={() => requestAct(r, 'rejected')}>✕</button>{' '}
+                    <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => requestAct(r, 'revision')}>↩</button>
                   </td>
                 </tr>
               ))}
@@ -452,14 +545,13 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
             <div className="confirm-icon" style={{ color: ACTION_META[confirm.action].color }}>
               {ACTION_META[confirm.action].icon}
             </div>
-            <h3 className="confirm-title">
-              Konfirmasi {ACTION_META[confirm.action].label}
-            </h3>
+            <h3 className="confirm-title">Konfirmasi {ACTION_META[confirm.action].label}</h3>
             <p className="confirm-desc">{ACTION_META[confirm.action].desc}</p>
 
             <div className="confirm-detail">
               <div className="confirm-row"><span>No. Request</span><strong>{confirm.row.request_no}</strong></div>
-              <div className="confirm-row"><span>Employee</span><strong>{names[confirm.row.employee_id] || '—'}</strong></div>
+              <div className="confirm-row"><span>Employee</span><strong>{empProfiles[confirm.row.employee_id]?.full_name || '—'}</strong></div>
+              <div className="confirm-row"><span>Departemen</span><strong>{empProfiles[confirm.row.employee_id]?.department || '—'}</strong></div>
               <div className="confirm-row"><span>Total</span><strong>{rupiah(confirm.row.total_amount)}</strong></div>
               {noteDraft[confirm.row.id] && (
                 <div className="confirm-row"><span>Catatan</span><strong>{noteDraft[confirm.row.id]}</strong></div>
@@ -482,6 +574,60 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
                 disabled={processing}
               >
                 {processing ? <><span className="spinner" />{`${ACTION_META[confirm.action].label}...`}</> : `Ya, ${ACTION_META[confirm.action].label}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Bulk Confirm Modal ---- */}
+      {bulkConfirm && (
+        <div className="modal-overlay" onClick={() => !processing && setBulkConfirm(null)}>
+          <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-icon" style={{ color: ACTION_META[bulkConfirm.action].color }}>
+              {ACTION_META[bulkConfirm.action].icon}
+            </div>
+            <h3 className="confirm-title">Bulk {ACTION_META[bulkConfirm.action].label}</h3>
+            <p className="confirm-desc">
+              Anda akan {ACTION_META[bulkConfirm.action].label.toLowerCase()} <strong>{selected.length} pengajuan</strong> sekaligus.
+              Aksi ini tidak bisa dibatalkan.
+            </p>
+
+            <div className="confirm-detail">
+              {selected.map((id) => {
+                const r = rows.find((x) => x.id === id)
+                return r ? (
+                  <div className="confirm-row" key={id}>
+                    <span>{r.request_no}</span>
+                    <strong>{rupiah(r.total_amount)}</strong>
+                  </div>
+                ) : null
+              })}
+              <div className="confirm-row" style={{ borderTop: '2px solid var(--border)', marginTop: 4, paddingTop: 8 }}>
+                <span>Total keseluruhan</span>
+                <strong>{rupiah(rows.filter((r) => selected.includes(r.id)).reduce((s, r) => s + Number(r.total_amount), 0))}</strong>
+              </div>
+            </div>
+
+            {bulkNote && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+                Catatan: <em>{bulkNote}</em>
+              </div>
+            )}
+
+            <div className="confirm-actions">
+              <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => setBulkConfirm(null)} disabled={processing}>
+                Batal
+              </button>
+              <button
+                className="btn"
+                style={{ background: ACTION_META[bulkConfirm.action].color, color: '#fff', flex: 1 }}
+                onClick={confirmBulkAct}
+                disabled={processing}
+              >
+                {processing
+                  ? <><span className="spinner" />Memproses {selected.length} pengajuan...</>
+                  : `Ya, ${ACTION_META[bulkConfirm.action].label} ${selected.length} Pengajuan`}
               </button>
             </div>
           </div>
@@ -852,3 +998,20 @@ export default function App() {
           <div className={`tab ${tab === 'finance' ? 'active' : ''}`} onClick={() => setTab('finance')}>Finance Verification</div>
         )}
         {profile.role === 'admin' && (
+          <div className={`tab ${tab === 'admin' ? 'active' : ''}`} onClick={() => setTab('admin')} style={{ marginLeft: 'auto', color: tab === 'admin' ? 'var(--teal)' : '#b35900' }}>⚙️ Admin Panel</div>
+        )}
+      </div>
+
+      <div className="container">
+        <div className="tab-content" key={tab}>
+          {tab === 'dashboard' && <Dashboard refreshKey={refreshKey} profile={profile} />}
+          {tab === 'submit' && <SubmitForm profile={profile} onSubmitted={bump} />}
+          {tab === 'mine' && <MyRequests profile={profile} refreshKey={refreshKey} />}
+          {tab === 'approval' && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
+          {tab === 'finance' && isFinance && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
+          {tab === 'admin' && profile.role === 'admin' && <AdminPanel />}
+        </div>
+      </div>
+    </div>
+  )
+}
