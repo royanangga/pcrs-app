@@ -118,11 +118,16 @@ function AdminUsers() {
   }
 
   async function deleteUser(id, name) {
-    if (!window.confirm(`Hapus user "${name}"? Aksi ini tidak bisa dibatalkan.`)) return
-    const { error } = await supabase.from('profiles').delete().eq('id', id)
-    if (error) { setMsg({ text: 'Error: ' + error.message, type: 'error' }); return }
-    setMsg({ text: `User "${name}" dihapus.`, type: 'ok' })
-    load()
+    if (!window.confirm(`Hapus user "${name}"?\nUser tidak akan bisa login lagi dan semua datanya akan dihapus permanen.`)) return
+    setLoading(true)
+    const result = await callAdminOps(session, { action: 'delete_user', user_id: id })
+    if (result.error) {
+      setMsg({ text: 'Gagal hapus: ' + result.error, type: 'error' })
+    } else {
+      setMsg({ text: `User "${name}" berhasil dihapus sepenuhnya.`, type: 'ok' })
+      load()
+    }
+    setLoading(false)
   }
 
   return (
