@@ -1057,3 +1057,21 @@ tbody tr:hover .badge {
 @media (max-width: 768px) {
   .search-bar-input { font-size: 14px; }
 }
+
+/* ---- Submit Confirm Modal ---- */
+.submit-confirm-info {
+  background: #f6f7f9;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 4px;
+}
+.submit-confirm-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+.submit-confirm-row:last-child { border-bottom: none; }
+.submit-confirm-row span { color: var(--text-muted); }

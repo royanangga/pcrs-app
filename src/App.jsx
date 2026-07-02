@@ -115,6 +115,7 @@ function SubmitForm({ profile, onSubmitted }) {
   const [files, setFiles] = useState([])
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const [showConfirm, setShowConfirm] = useState(false)
 
   const total = items.reduce((s, it) => s + (Number(it.amount) || 0), 0)
 
@@ -130,14 +131,19 @@ function SubmitForm({ profile, onSubmitted }) {
     setItems(items.filter((_, idx) => idx !== i))
   }
 
-  async function handleSubmit(e) {
+  function handleClickSubmit(e) {
     e.preventDefault()
     setMsg('')
     if (items.some((it) => !it.expense_date || !it.amount)) {
       setMsg('Lengkapi semua tanggal dan nominal item.')
       return
     }
+    setShowConfirm(true)
+  }
+
+  async function handleConfirmedSubmit() {
     setSaving(true)
+    setShowConfirm(false)
 
     const required_role = requiredRoleFor(total)
     const { data: header, error: hErr } = await supabase
@@ -196,14 +202,15 @@ function SubmitForm({ profile, onSubmitted }) {
     setSaving(false)
     setItems([{ expense_date: '', category: CATEGORIES[0], description: '', amount: '' }])
     setFiles([])
-    setMsg(`Berhasil! Request ${header.request_no} dikirim untuk approval ${header.required_role}.`)
+    setMsg(`✓ Berhasil! Request ${header.request_no} dikirim untuk approval ${header.required_role}.`)
     onSubmitted && onSubmitted()
   }
 
   return (
+    <>
     <div className="card">
       <h3>Pengajuan Reimbursement Baru</h3>
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleClickSubmit}>
         {items.map((it, i) => (
           <div className="item-row" key={i}>
             <div>
@@ -251,13 +258,98 @@ function SubmitForm({ profile, onSubmitted }) {
 
         <div className="total-line">Total: {rupiah(total)} &nbsp;•&nbsp; Alur Approval: <span style={{ color: 'var(--teal)', fontWeight: 700 }}>{approvalFlowLabel(total)}</span></div>
 
-        {msg && <div className="error-text" style={{ color: msg.startsWith('Berhasil') ? 'var(--success)' : 'var(--danger)' }}>{msg}</div>}
+        {msg && <div className="error-text" style={{ color: msg.startsWith('✓') ? 'var(--success)' : 'var(--danger)' }}>{msg}</div>}
 
         <button className="btn btn-primary" style={{ marginTop: 14 }} disabled={saving}>
           {saving ? <><span className="spinner" />Mengirim...</> : 'Submit Reimbursement'}
         </button>
       </form>
     </div>
+
+    {/* Modal Konfirmasi Submit */}
+    {showConfirm && (
+      <div className="modal-overlay" onClick={() => setShowConfirm(false)}>
+        <div className="modal-box" style={{ width: 480, maxWidth: '96vw' }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-close" onClick={() => setShowConfirm(false)}>✕</div>
+
+          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+            <div style={{ fontSize: 36, marginBottom: 8 }}>📋</div>
+            <h3 style={{ margin: 0, color: 'var(--navy)' }}>Konfirmasi Pengajuan</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '6px 0 0' }}>
+              Pastikan semua data berikut sudah benar sebelum dikirim.
+            </p>
+          </div>
+
+          {/* Info pengaju */}
+          <div className="submit-confirm-info">
+            <div className="submit-confirm-row">
+              <span>Nama</span><strong>{profile.full_name}</strong>
+            </div>
+            <div className="submit-confirm-row">
+              <span>Department</span><strong>{profile.department}</strong>
+            </div>
+            <div className="submit-confirm-row">
+              <span>Alur Approval</span>
+              <strong style={{ color: 'var(--teal)' }}>{approvalFlowLabel(total)}</strong>
+            </div>
+          </div>
+
+          {/* Rekap item */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>
+              Rekap Item Tagihan
+            </div>
+            <table style={{ marginBottom: 0 }}>
+              <thead>
+                <tr>
+                  <th>Tanggal</th>
+                  <th>Kategori</th>
+                  <th>Keterangan</th>
+                  <th style={{ textAlign: 'right' }}>Nominal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, i) => (
+                  <tr key={i}>
+                    <td style={{ fontSize: 12 }}>{it.expense_date}</td>
+                    <td style={{ fontSize: 12 }}>{it.category}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{it.description || '—'}</td>
+                    <td style={{ fontSize: 12, textAlign: 'right', fontWeight: 600 }}>{rupiah(it.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={3} style={{ fontWeight: 800, fontSize: 13, paddingTop: 10, borderTop: '2px solid var(--navy)', color: 'var(--navy)' }}>
+                    TOTAL
+                  </td>
+                  <td style={{ fontWeight: 800, fontSize: 15, textAlign: 'right', paddingTop: 10, borderTop: '2px solid var(--navy)', color: 'var(--teal)' }}>
+                    {rupiah(total)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* File */}
+          {files.length > 0 && (
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-muted)' }}>
+              📎 {files.length} file bukti: {files.map((f) => f.name).join(', ')}
+            </div>
+          )}
+
+          <div className="confirm-actions" style={{ marginTop: 18 }}>
+            <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => setShowConfirm(false)}>
+              Kembali & Edit
+            </button>
+            <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleConfirmedSubmit}>
+              ✓ Ya, Kirim Sekarang
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 
