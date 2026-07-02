@@ -765,6 +765,203 @@ function Dashboard({ refreshKey, profile }) {
   const [dateTo, setDateTo] = useState('')
   const [qrModal, setQrModal] = useState(null)
 
+  async function printSlip(r) {
+    // Ambil detail item
+    const { data: items } = await supabase
+      .from('reimbursement_items')
+      .select('*')
+      .eq('reimbursement_id', r.id)
+      .order('expense_date')
+
+    // Ambil riwayat approval
+    const { data: history } = await supabase
+      .from('approval_history')
+      .select('*, profiles(full_name, role)')
+      .eq('reimbursement_id', r.id)
+      .order('created_at')
+
+    // Generate QR sebagai data URL
+    const qrDataUrl = await QRCode.toDataURL(trackUrl(r.request_no), { width: 110, margin: 1 })
+
+    const rupiah = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
+    const actionLabel = { submitted: 'Diajukan', approved: 'Disetujui', rejected: 'Ditolak', revision: 'Dikembalikan', verified: 'Diverifikasi' }
+
+    const itemRows = (items || []).map((it) => `
+      <tr>
+        <td>${it.expense_date}</td>
+        <td>${it.category}</td>
+        <td>${it.description || '—'}</td>
+        <td style="text-align:right">${rupiah(it.amount)}</td>
+      </tr>`).join('')
+
+    const historyRows = (history || []).map((h) => `
+      <tr>
+        <td>${new Date(h.created_at).toLocaleString('id-ID')}</td>
+        <td>${actionLabel[h.action] || h.action}</td>
+        <td>${h.profiles?.full_name || '—'} (${h.profiles?.role || '—'})</td>
+        <td>${h.notes || '—'}</td>
+      </tr>`).join('')
+
+    const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Bukti Reimbursement ${r.request_no}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #1c2230; padding: 24px; }
+    .slip { max-width: 720px; margin: 0 auto; }
+
+    /* Header */
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #14213d; padding-bottom: 14px; margin-bottom: 16px; }
+    .header-left .title { font-size: 18px; font-weight: 800; color: #14213d; letter-spacing: 0.5px; }
+    .header-left .subtitle { font-size: 11px; color: #6b7280; margin-top: 2px; }
+    .header-right { text-align: right; }
+    .doc-title { font-size: 13px; font-weight: 700; color: #0f6e6e; text-transform: uppercase; letter-spacing: 0.5px; }
+    .req-no { font-size: 15px; font-weight: 800; color: #14213d; margin-top: 2px; }
+
+    /* SAH stamp */
+    .stamp-area { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+    .stamp {
+      border: 3px solid #1f8a4c;
+      color: #1f8a4c;
+      font-size: 18px;
+      font-weight: 900;
+      padding: 6px 20px;
+      border-radius: 6px;
+      letter-spacing: 3px;
+      transform: rotate(-5deg);
+    }
+
+    /* Info grid */
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #f6f7f9; border-radius: 6px; padding: 12px; margin-bottom: 14px; }
+    .info-item .label { font-size: 10px; color: #6b7280; text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; }
+    .info-item .value { font-size: 13px; font-weight: 600; margin-top: 2px; }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+    th { background: #14213d; color: #fff; padding: 7px 10px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; }
+    td { padding: 7px 10px; border-bottom: 1px solid #e3e6ea; font-size: 12px; }
+    tr:last-child td { border-bottom: none; }
+    .total-row td { font-weight: 700; background: #e6f3f3; color: #0f6e6e; font-size: 13px; border-top: 2px solid #0f6e6e; }
+
+    /* QR + signature row */
+    .bottom-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 20px; border-top: 1px solid #e3e6ea; padding-top: 16px; }
+    .qr-area { text-align: center; }
+    .qr-area img { border: 1px solid #e3e6ea; border-radius: 4px; }
+    .qr-label { font-size: 10px; color: #6b7280; margin-top: 4px; }
+    .sign-area { display: flex; gap: 40px; }
+    .sign-box { text-align: center; width: 140px; }
+    .sign-line { border-bottom: 1px solid #14213d; margin-bottom: 6px; height: 40px; }
+    .sign-label { font-size: 10px; color: #6b7280; text-transform: uppercase; font-weight: 700; }
+    .sign-name { font-size: 11px; font-weight: 600; margin-top: 2px; }
+
+    /* Footer */
+    .footer { margin-top: 16px; text-align: center; font-size: 10px; color: #9ca3af; border-top: 1px dashed #e3e6ea; padding-top: 10px; }
+
+    @media print {
+      body { padding: 12px; }
+      button { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+<div class="slip">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="title">PCRS</div>
+      <div class="subtitle">Petty Cash Reimbursement System</div>
+    </div>
+    <div class="header-right">
+      <div class="doc-title">Bukti Reimbursement Petty Cash</div>
+      <div class="req-no">${r.request_no}</div>
+    </div>
+  </div>
+
+  <!-- SAH stamp -->
+  <div class="stamp-area">
+    <div class="stamp">✓ DOKUMEN SAH</div>
+  </div>
+
+  <!-- Info -->
+  <div class="info-grid">
+    <div class="info-item">
+      <div class="label">Employee</div>
+      <div class="value">${r.profiles?.full_name || '—'}</div>
+    </div>
+    <div class="info-item">
+      <div class="label">Department</div>
+      <div class="value">${r.profiles?.department || '—'}</div>
+    </div>
+    <div class="info-item">
+      <div class="label">Tanggal Pengajuan</div>
+      <div class="value">${r.request_date}</div>
+    </div>
+    <div class="info-item">
+      <div class="label">Tanggal Cetak</div>
+      <div class="value">${new Date().toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' })}</div>
+    </div>
+  </div>
+
+  <!-- Detail Item -->
+  <table>
+    <thead>
+      <tr><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th style="text-align:right">Nominal</th></tr>
+    </thead>
+    <tbody>
+      ${itemRows}
+      <tr class="total-row">
+        <td colspan="3">TOTAL REIMBURSEMENT</td>
+        <td style="text-align:right">${rupiah(r.total_amount)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Riwayat Approval -->
+  <table>
+    <thead>
+      <tr><th>Waktu</th><th>Status</th><th>Oleh</th><th>Catatan</th></tr>
+    </thead>
+    <tbody>${historyRows}</tbody>
+  </table>
+
+  <!-- QR + Tanda Tangan -->
+  <div class="bottom-row">
+    <div class="qr-area">
+      <img src="${qrDataUrl}" width="110" height="110" />
+      <div class="qr-label">Scan untuk verifikasi online</div>
+    </div>
+    <div class="sign-area">
+      <div class="sign-box">
+        <div class="sign-line"></div>
+        <div class="sign-label">Finance Staff</div>
+        <div class="sign-name">( ______________________ )</div>
+      </div>
+      <div class="sign-box">
+        <div class="sign-line"></div>
+        <div class="sign-label">Finance Manager</div>
+        <div class="sign-name">( ______________________ )</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    Dokumen ini dicetak otomatis oleh sistem PCRS &nbsp;•&nbsp; ${r.request_no} &nbsp;•&nbsp; ${new Date().toLocaleString('id-ID')}
+  </div>
+</div>
+
+<script>window.onload = () => window.print();</script>
+</body>
+</html>`
+
+    const w = window.open('', '_blank', 'width=800,height=700')
+    w.document.write(html)
+    w.document.close()
+  }
+
   const isFinanceOrAdmin = ['finance_staff', 'finance_manager', 'admin'].includes(profile.role)
 
   useEffect(() => {
@@ -912,7 +1109,10 @@ function Dashboard({ refreshKey, profile }) {
                   <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
                   <td>
                     {r.status === 'verified' && (r.employee_id === profile.id || ['finance_staff', 'finance_manager', 'admin'].includes(profile.role)) && (
-                      <button className="btn btn-primary btn-sm" onClick={() => setQrModal(r)}>Tampilkan QR</button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-primary btn-sm" onClick={() => setQrModal(r)}>QR</button>
+                        <button className="btn btn-sm" style={{ background: '#14213d', color: '#fff' }} onClick={() => printSlip(r)}>🖨 Print</button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -937,6 +1137,284 @@ function Dashboard({ refreshKey, profile }) {
           </div>
         </div>
       )}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------- REPORTING ----
+function ReportingPage({ profile }) {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filterDept, setFilterDept] = useState('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      const { data } = await supabase
+        .from('reimbursements')
+        .select('*, profiles(full_name, department)')
+        .eq('status', 'verified')
+        .order('request_date', { ascending: false })
+      setRows(data || [])
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  const departments = [...new Set(rows.map((r) => r.profiles?.department).filter(Boolean))]
+
+  const filtered = rows.filter((r) => {
+    if (filterDept !== 'all' && r.profiles?.department !== filterDept) return false
+    if (dateFrom && r.request_date < dateFrom) return false
+    if (dateTo && r.request_date > dateTo) return false
+    return true
+  })
+
+  const totalFiltered = filtered.reduce((s, r) => s + Number(r.total_amount), 0)
+
+  async function doPrint(r) {
+    const { data: items } = await supabase
+      .from('reimbursement_items')
+      .select('*')
+      .eq('reimbursement_id', r.id)
+      .order('expense_date')
+
+    const { data: history } = await supabase
+      .from('approval_history')
+      .select('*, profiles(full_name, role)')
+      .eq('reimbursement_id', r.id)
+      .order('created_at')
+
+    const qrDataUrl = await QRCode.toDataURL(trackUrl(r.request_no), { width: 100, margin: 1 })
+
+    const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
+
+    // Cari approver & finance verifier dari history
+    const approverRow = (history || []).find((h) => h.action === 'approved')
+    const verifierRow = (history || []).find((h) => h.action === 'verified')
+    const submitterRow = (history || []).find((h) => h.action === 'submitted')
+
+    const approverName  = approverRow?.profiles?.full_name  || '_______________'
+    const verifierName  = verifierRow?.profiles?.full_name  || '_______________'
+    const employeeName  = r.profiles?.full_name             || '_______________'
+
+    const itemRows = (items || []).map((it, i) => `
+      <tr>
+        <td style="text-align:center">${i + 1}</td>
+        <td>${it.expense_date}</td>
+        <td>${it.category}</td>
+        <td>${it.description || '—'}</td>
+        <td style="text-align:right">${rp(it.amount)}</td>
+      </tr>`).join('')
+
+    const printDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+
+    const html = `<!DOCTYPE html>
+<html lang="id"><head>
+<meta charset="UTF-8"/>
+<title>Slip Reimbursement ${r.request_no}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 28px 32px; }
+
+  /* Header */
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .brand { font-size: 20px; font-weight: 900; color: #14213d; letter-spacing: 1px; }
+  .brand span { color: #0f6e6e; }
+  .doc-label { text-align: right; }
+  .doc-label .title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #14213d; }
+  .doc-label .no { font-size: 15px; font-weight: 900; color: #0f6e6e; }
+  .divider { border: none; border-top: 2.5px solid #14213d; margin: 10px 0; }
+  .divider-light { border: none; border-top: 1px solid #ccc; margin: 10px 0; }
+
+  /* SAH stamp */
+  .sah { display: inline-block; border: 2.5px solid #1f8a4c; color: #1f8a4c; font-size: 13px; font-weight: 900;
+    padding: 3px 14px; border-radius: 4px; letter-spacing: 2px; transform: rotate(-4deg); float: right; margin-top: -4px; }
+
+  /* Info row */
+  .info-row { display: flex; gap: 0; margin-bottom: 10px; }
+  .info-col { flex: 1; }
+  .info-col .lbl { font-size: 10px; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+  .info-col .val { font-size: 12px; font-weight: 600; margin-top: 1px; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+  thead th { background: #14213d; color: #fff; padding: 6px 8px; font-size: 10px; text-transform: uppercase; text-align: left; }
+  tbody td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; font-size: 11px; }
+  .total-row td { font-weight: 700; font-size: 12px; background: #f0faf4; border-top: 2px solid #14213d; }
+
+  /* Bottom: QR + signatures */
+  .bottom { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 18px; }
+  .qr-wrap { text-align: center; }
+  .qr-wrap img { border: 1px solid #ddd; border-radius: 4px; }
+  .qr-wrap p { font-size: 9px; color: #888; margin-top: 3px; }
+  .signs { display: flex; gap: 32px; }
+  .sign-box { text-align: center; min-width: 130px; }
+  .sign-space { height: 44px; border-bottom: 1px solid #333; margin-bottom: 5px; position: relative; }
+  .sign-name { font-size: 10px; font-weight: 700; }
+  .sign-role { font-size: 9px; color: #666; margin-top: 1px; }
+  .pre-filled { position: absolute; bottom: 4px; left: 0; right: 0; font-size: 10px; font-weight: 700; text-align: center; color: #14213d; }
+
+  /* Footer */
+  .footer { margin-top: 14px; text-align: center; font-size: 9px; color: #aaa; border-top: 1px dashed #ddd; padding-top: 8px; }
+
+  @media print { @page { margin: 15mm; } }
+</style>
+</head><body>
+
+<!-- Header -->
+<div class="header">
+  <div>
+    <div class="brand">PCRS <span>•</span> Petty Cash</div>
+    <div style="font-size:10px;color:#888;margin-top:2px">Petty Cash Reimbursement System</div>
+  </div>
+  <div class="doc-label">
+    <div class="title">Slip Reimbursement</div>
+    <div class="no">${r.request_no}</div>
+  </div>
+</div>
+
+<hr class="divider"/>
+
+<!-- SAH + Info -->
+<div style="overflow:hidden;margin-bottom:10px">
+  <div class="sah">✓ DOKUMEN SAH</div>
+  <div class="info-row">
+    <div class="info-col"><div class="lbl">Nama Karyawan</div><div class="val">${employeeName}</div></div>
+    <div class="info-col"><div class="lbl">Department</div><div class="val">${r.profiles?.department || '—'}</div></div>
+    <div class="info-col"><div class="lbl">Tanggal Pengajuan</div><div class="val">${r.request_date}</div></div>
+    <div class="info-col"><div class="lbl">Tanggal Cetak</div><div class="val">${printDate}</div></div>
+  </div>
+</div>
+
+<hr class="divider-light"/>
+
+<!-- Tabel Item -->
+<table>
+  <thead>
+    <tr><th style="width:30px;text-align:center">No</th><th style="width:90px">Tanggal</th><th style="width:110px">Kategori</th><th>Keterangan</th><th style="width:110px;text-align:right">Nominal</th></tr>
+  </thead>
+  <tbody>
+    ${itemRows}
+    <tr class="total-row">
+      <td colspan="4">TOTAL</td>
+      <td style="text-align:right">${rp(r.total_amount)}</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- QR + Tanda Tangan -->
+<div class="bottom">
+  <div class="qr-wrap">
+    <img src="${qrDataUrl}" width="100" height="100"/>
+    <p>Scan untuk verifikasi</p>
+  </div>
+  <div class="signs">
+    <div class="sign-box">
+      <div class="sign-space"><div class="pre-filled">${employeeName}</div></div>
+      <div class="sign-name">Pembuat Pengajuan</div>
+      <div class="sign-role">(Employee)</div>
+    </div>
+    <div class="sign-box">
+      <div class="sign-space"><div class="pre-filled">${approverName}</div></div>
+      <div class="sign-name">Menyetujui</div>
+      <div class="sign-role">(Supervisor / Manager)</div>
+    </div>
+    <div class="sign-box">
+      <div class="sign-space"><div class="pre-filled">${verifierName}</div></div>
+      <div class="sign-name">Verifikasi Finance</div>
+      <div class="sign-role">(Finance Staff / Manager)</div>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  Dicetak otomatis oleh PCRS &nbsp;•&nbsp; ${r.request_no} &nbsp;•&nbsp; ${new Date().toLocaleString('id-ID')}
+</div>
+
+<script>window.onload = () => window.print();</script>
+</body></html>`
+
+    const w = window.open('', '_blank', 'width=820,height=650')
+    w.document.write(html)
+    w.document.close()
+  }
+
+  return (
+    <>
+      {/* Filter bar */}
+      <div className="filter-panel" style={{ marginBottom: 16 }}>
+        <div className="filter-panel-head">
+          <div className="filter-title"><span className="filter-icon">📊</span> Reporting — Reimbursement Terverifikasi</div>
+          {(filterDept !== 'all' || dateFrom || dateTo) && (
+            <span className="filter-clear-all" onClick={() => { setFilterDept('all'); setDateFrom(''); setDateTo('') }}>Reset filter</span>
+          )}
+        </div>
+        <div className="filter-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+          <div className="filter-field">
+            <label>Department</label>
+            <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
+              <option value="all">Semua Department</option>
+              {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div className="filter-field">
+            <label>Dari Tanggal</label>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          </div>
+          <div className="filter-field">
+            <label>Sampai Tanggal</label>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Summary KPI */}
+      <div className="grid-kpi" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 16 }}>
+        <div className="kpi-box"><div className="label">Total Transaksi</div><div className="value">{filtered.length}</div></div>
+        <div className="kpi-box"><div className="label">Total Nilai</div><div className="value" style={{ fontSize: 16 }}>{rupiah(totalFiltered)}</div></div>
+        <div className="kpi-box"><div className="label">Department</div><div className="value">{filterDept === 'all' ? 'Semua' : filterDept}</div></div>
+      </div>
+
+      {/* Tabel */}
+      <div className="card">
+        <h3>Daftar Reimbursement Terverifikasi — Siap Cetak</h3>
+        {loading ? <SkeletonTable cols={5} rows={4} /> : filtered.length === 0 ? (
+          <div className="empty-state">Tidak ada data yang sesuai filter.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr><th>No. Request</th><th>Tanggal</th><th>Karyawan</th><th>Department</th><th style={{ textAlign: 'right' }}>Total</th><th></th></tr>
+            </thead>
+            <tbody>
+              {filtered.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.request_no}</td>
+                  <td>{r.request_date}</td>
+                  <td>{r.profiles?.full_name || '—'}</td>
+                  <td>{r.profiles?.department || '—'}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{rupiah(r.total_amount)}</td>
+                  <td>
+                    <button className="btn btn-sm" style={{ background: '#14213d', color: '#fff', whiteSpace: 'nowrap' }} onClick={() => doPrint(r)}>
+                      🖨 Print Slip
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ background: '#e6f3f3' }}>
+                <td colSpan={4} style={{ fontWeight: 700, padding: '9px 10px' }}>TOTAL ({filtered.length} transaksi)</td>
+                <td style={{ textAlign: 'right', fontWeight: 800, color: 'var(--teal)', padding: '9px 10px' }}>{rupiah(totalFiltered)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        )}
+      </div>
     </>
   )
 }
@@ -997,6 +1475,9 @@ export default function App() {
         {isFinance && (
           <div className={`tab ${tab === 'finance' ? 'active' : ''}`} onClick={() => setTab('finance')}>Finance Verification</div>
         )}
+        {isFinance && (
+          <div className={`tab ${tab === 'reporting' ? 'active' : ''}`} onClick={() => setTab('reporting')}>📊 Reporting</div>
+        )}
         {profile.role === 'admin' && (
           <div className={`tab ${tab === 'admin' ? 'active' : ''}`} onClick={() => setTab('admin')} style={{ marginLeft: 'auto', color: tab === 'admin' ? 'var(--teal)' : '#b35900' }}>⚙️ Admin Panel</div>
         )}
@@ -1009,6 +1490,7 @@ export default function App() {
           {tab === 'mine' && <MyRequests profile={profile} refreshKey={refreshKey} />}
           {tab === 'approval' && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
           {tab === 'finance' && isFinance && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
+          {tab === 'reporting' && isFinance && <ReportingPage profile={profile} />}
           {tab === 'admin' && profile.role === 'admin' && <AdminPanel />}
         </div>
       </div>
