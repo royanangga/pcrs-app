@@ -1149,19 +1149,26 @@ function ReportingPage({ profile }) {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
 
+  const isFinanceOrAdmin = ['finance_staff', 'finance_manager', 'admin'].includes(profile.role)
+
   useEffect(() => {
     async function load() {
       setLoading(true)
-      const { data } = await supabase
+      let query = supabase
         .from('reimbursements')
         .select('*, profiles(full_name, department)')
         .eq('status', 'verified')
         .order('request_date', { ascending: false })
+
+      // Employee hanya lihat milik sendiri
+      if (!isFinanceOrAdmin) query = query.eq('employee_id', profile.id)
+
+      const { data } = await query
       setRows(data || [])
       setLoading(false)
     }
     load()
-  }, [])
+  }, [isFinanceOrAdmin, profile.id])
 
   const departments = [...new Set(rows.map((r) => r.profiles?.department).filter(Boolean))]
 
@@ -1348,19 +1355,21 @@ function ReportingPage({ profile }) {
       {/* Filter bar */}
       <div className="filter-panel" style={{ marginBottom: 16 }}>
         <div className="filter-panel-head">
-          <div className="filter-title"><span className="filter-icon">📊</span> Reporting — Reimbursement Terverifikasi</div>
+          <div className="filter-title"><span className="filter-icon">📊</span> {isFinanceOrAdmin ? 'Reporting — Semua Reimbursement Terverifikasi' : 'Reporting — Reimbursement Saya'}</div>
           {(filterDept !== 'all' || dateFrom || dateTo) && (
             <span className="filter-clear-all" onClick={() => { setFilterDept('all'); setDateFrom(''); setDateTo('') }}>Reset filter</span>
           )}
         </div>
         <div className="filter-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-          <div className="filter-field">
-            <label>Department</label>
-            <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
-              <option value="all">Semua Department</option>
-              {departments.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </div>
+          {isFinanceOrAdmin && (
+            <div className="filter-field">
+              <label>Department</label>
+              <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
+                <option value="all">Semua Department</option>
+                {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          )}
           <div className="filter-field">
             <label>Dari Tanggal</label>
             <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
@@ -1475,9 +1484,7 @@ export default function App() {
         {isFinance && (
           <div className={`tab ${tab === 'finance' ? 'active' : ''}`} onClick={() => setTab('finance')}>Finance Verification</div>
         )}
-        {isFinance && (
-          <div className={`tab ${tab === 'reporting' ? 'active' : ''}`} onClick={() => setTab('reporting')}>📊 Reporting</div>
-        )}
+        <div className={`tab ${tab === 'reporting' ? 'active' : ''}`} onClick={() => setTab('reporting')}>📊 Reporting</div>
         {profile.role === 'admin' && (
           <div className={`tab ${tab === 'admin' ? 'active' : ''}`} onClick={() => setTab('admin')} style={{ marginLeft: 'auto', color: tab === 'admin' ? 'var(--teal)' : '#b35900' }}>⚙️ Admin Panel</div>
         )}
@@ -1490,7 +1497,7 @@ export default function App() {
           {tab === 'mine' && <MyRequests profile={profile} refreshKey={refreshKey} />}
           {tab === 'approval' && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
           {tab === 'finance' && isFinance && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
-          {tab === 'reporting' && isFinance && <ReportingPage profile={profile} />}
+          {tab === 'reporting' && <ReportingPage profile={profile} />}
           {tab === 'admin' && profile.role === 'admin' && <AdminPanel />}
         </div>
       </div>
