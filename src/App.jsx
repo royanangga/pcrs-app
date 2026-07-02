@@ -15,9 +15,13 @@ const STATUS_LABEL = {
 }
 
 function requiredRoleFor(total) {
-  if (total <= 500000) return 'supervisor'
-  if (total <= 5000000) return 'manager'
-  return 'finance_manager'
+  // Semua pengajuan selalu mulai dari supervisor departemen
+  return 'supervisor'
+}
+
+function approvalFlowLabel(total) {
+  if (Number(total) >= 5000000) return 'Supervisor → Manager (nominal ≥ Rp5jt)'
+  return 'Supervisor'
 }
 
 function rupiah(n) {
@@ -245,7 +249,7 @@ function SubmitForm({ profile, onSubmitted }) {
           <div className="checklist-line">{files.length} file dipilih: {files.map((f) => f.name).join(', ')}</div>
         )}
 
-        <div className="total-line">Total: {rupiah(total)} &nbsp;•&nbsp; Approval level: {requiredRoleFor(total)}</div>
+        <div className="total-line">Total: {rupiah(total)} &nbsp;•&nbsp; Alur Approval: <span style={{ color: 'var(--teal)', fontWeight: 700 }}>{approvalFlowLabel(total)}</span></div>
 
         {msg && <div className="error-text" style={{ color: msg.startsWith('Berhasil') ? 'var(--success)' : 'var(--danger)' }}>{msg}</div>}
 
@@ -275,25 +279,28 @@ function SkeletonTable({ cols = 4, rows = 4 }) {
   )
 }
 
-function MyRequests({ profile, refreshKey }) {
-  const [rows, setRows] = useState([])
+function MyRequests({ profile, refreshKey, onRefresh }) {
+  const [rows, setRows]           = useState([])
   const [loadingData, setLoadingData] = useState(true)
-  const [openId, setOpenId] = useState(null)
-  const [attMap, setAttMap] = useState({})
+  const [openId, setOpenId]       = useState(null)
+  const [attMap, setAttMap]       = useState({})
+  const [editId, setEditId]       = useState(null)   // ID pengajuan yang sedang direvisi
+  const [editItems, setEditItems] = useState([])
+  const [editFiles, setEditFiles] = useState([])
+  const [saving, setSaving]       = useState(false)
+  const [msg, setMsg]             = useState('')
 
-  useEffect(() => {
-    async function load() {
-      setLoadingData(true)
-      const { data } = await supabase
-        .from('reimbursements')
-        .select('*')
-        .eq('employee_id', profile.id)
-        .order('created_at', { ascending: false })
-      setRows(data || [])
-      setLoadingData(false)
-    }
-    load()
-  }, [profile.id, refreshKey])
+  const load = useCallback(async () => {
+    setLoadingData(true)
+    const { data } = await supabase
+      .from('reimbursements').select('*')
+      .eq('employee_id', profile.id)
+      .order('created_at', { ascending: false })
+    setRows(data || [])
+    setLoadingData(false)
+  }, [profile.id])
+
+  useEffect(() => { load() }, [load, refreshKey])
 
   async function toggleOpen(id) {
     if (openId === id) { setOpenId(null); return }
@@ -304,9 +311,95 @@ function MyRequests({ profile, refreshKey }) {
     }
   }
 
+  // Buka form revisi — load item yang sudah ada
+  async function openRevision(r) {
+    const { data: items } = await supabase
+      .from('reimbursement_items').select('*')
+      .eq('reimbursement_id', r.id).order('expense_date')
+    setEditItems((items || []).map((it) => ({
+      id: it.id,
+      expense_date: it.expense_date,
+      category: it.category,
+      description: it.description || '',
+      amount: String(it.amount),
+    })))
+    setEditFiles([])
+    setEditId(r.id)
+    setMsg('')
+    setOpenId(null)
+  }
+
+  function updateEditItem(i, field, value) {
+    const next = [...editItems]
+    next[i][field] = value
+    setEditItems(next)
+  }
+  function addEditItem() {
+    setEditItems([...editItems, { expense_date: '', category: CATEGORIES[0], description: '', amount: '' }])
+  }
+  function removeEditItem(i) {
+    setEditItems(editItems.filter((_, idx) => idx !== i))
+  }
+
+  async function submitRevision(r) {
+    if (editItems.some((it) => !it.expense_date || !it.amount)) {
+      setMsg('Lengkapi semua tanggal dan nominal item.')
+      return
+    }
+    setSaving(true)
+    const total = editItems.reduce((s, it) => s + (Number(it.amount) || 0), 0)
+
+    // Hapus item lama, insert item baru
+    await supabase.from('reimbursement_items').delete().eq('reimbursement_id', r.id)
+    await supabase.from('reimbursement_items').insert(
+      editItems.map((it) => ({
+        reimbursement_id: r.id,
+        expense_date: it.expense_date,
+        category: it.category,
+        description: it.description,
+        amount: Number(it.amount),
+      }))
+    )
+
+    // Upload file baru kalau ada
+    for (const file of editFiles) {
+      const path = `${r.id}/${Date.now()}_${file.name}`
+      const { error: upErr } = await supabase.storage.from('receipts').upload(path, file)
+      if (!upErr) {
+        await supabase.from('attachments').insert({
+          reimbursement_id: r.id, file_name: file.name, file_path: path,
+        })
+      }
+    }
+
+    // Update status kembali ke submitted, required_role kembali ke supervisor
+    await supabase.from('reimbursements').update({
+      status: 'submitted',
+      required_role: 'supervisor',
+      total_amount: total,
+    }).eq('id', r.id)
+
+    // Catat di audit trail
+    await supabase.from('approval_history').insert({
+      reimbursement_id: r.id,
+      approver_id: profile.id,
+      action: 'submitted',
+      notes: 'Pengajuan direvisi dan disubmit ulang oleh employee',
+    })
+
+    setSaving(false)
+    setEditId(null)
+    setMsg('')
+    load()
+    onRefresh && onRefresh()
+  }
+
+  const editTotal = editItems.reduce((s, it) => s + (Number(it.amount) || 0), 0)
+
   return (
     <div className="card">
       <h3>Pengajuan Saya</h3>
+      {msg && <div className="error-text" style={{ color: 'var(--danger)', marginBottom: 10 }}>{msg}</div>}
       {loadingData ? <SkeletonTable cols={5} rows={4} /> : rows.length === 0 ? (
         <div className="empty-state">Belum ada pengajuan.</div>
       ) : (
@@ -317,14 +410,95 @@ function MyRequests({ profile, refreshKey }) {
           <tbody>
             {rows.map((r) => (
               <React.Fragment key={r.id}>
-                <tr>
+                <tr className={editId === r.id ? 'row-selected' : ''}>
                   <td>{r.request_no}</td>
                   <td>{r.request_date}</td>
                   <td>{rupiah(r.total_amount)}</td>
                   <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
-                  <td><span className="detail-toggle" onClick={() => toggleOpen(r.id)}>{openId === r.id ? 'Tutup' : 'Detail'}</span></td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    {r.status === 'revision' ? (
+                      <button
+                        className="btn btn-sm"
+                        style={{ background: '#ffe6cc', color: '#b35900', fontWeight: 700 }}
+                        onClick={() => editId === r.id ? setEditId(null) : openRevision(r)}
+                      >
+                        {editId === r.id ? 'Tutup' : '✏ Edit & Submit Ulang'}
+                      </button>
+                    ) : (
+                      <span className="detail-toggle" onClick={() => toggleOpen(r.id)}>
+                        {openId === r.id ? 'Tutup' : 'Detail'}
+                      </span>
+                    )}
+                  </td>
                 </tr>
-                {openId === r.id && (
+
+                {/* Panel Revisi */}
+                {editId === r.id && (
+                  <tr>
+                    <td colSpan={5}>
+                      <div className="revision-panel">
+                        <div className="revision-header">
+                          ✏ Revisi Pengajuan <span>{r.request_no}</span>
+                          <div className="revision-note">Nomor request tetap sama. Setelah submit ulang akan kembali ke antrian approval Supervisor.</div>
+                        </div>
+
+                        {editItems.map((it, i) => (
+                          <div className="item-row" key={i}>
+                            <div>
+                              <label>Tanggal</label>
+                              <input type="date" value={it.expense_date} onChange={(e) => updateEditItem(i, 'expense_date', e.target.value)} required />
+                            </div>
+                            <div>
+                              <label>Kategori</label>
+                              <select value={it.category} onChange={(e) => updateEditItem(i, 'category', e.target.value)}>
+                                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label>Keterangan</label>
+                              <input value={it.description} onChange={(e) => updateEditItem(i, 'description', e.target.value)} placeholder="Opsional" />
+                            </div>
+                            <div>
+                              <label>Nominal</label>
+                              <input type="number" min="1" value={it.amount} onChange={(e) => updateEditItem(i, 'amount', e.target.value)} required />
+                            </div>
+                            <div>
+                              {editItems.length > 1 && (
+                                <button type="button" className="btn btn-danger btn-sm" onClick={() => removeEditItem(i)}>Hapus</button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+
+                        <button type="button" className="btn btn-sm" style={{ background: '#f1f3f5', color: '#333', marginTop: 10 }} onClick={addEditItem}>
+                          + Tambah Item
+                        </button>
+
+                        <div className="total-line" style={{ marginTop: 10 }}>
+                          Total: {rupiah(editTotal)} &nbsp;•&nbsp; Alur: {approvalFlowLabel(editTotal)}
+                        </div>
+
+                        <label style={{ marginTop: 14 }}>Upload Bukti Transaksi Baru (opsional, file lama tetap tersimpan)</label>
+                        <input type="file" accept="image/*,.pdf" multiple onChange={(e) => setEditFiles(Array.from(e.target.files))} />
+                        {editFiles.length > 0 && (
+                          <div className="checklist-line">{editFiles.length} file dipilih: {editFiles.map((f) => f.name).join(', ')}</div>
+                        )}
+
+                        <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+                          <button className="btn btn-primary" onClick={() => submitRevision(r)} disabled={saving}>
+                            {saving ? <><span className="spinner" />Menyimpan...</> : '✓ Submit Ulang'}
+                          </button>
+                          <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} onClick={() => setEditId(null)}>
+                            Batal
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+
+                {/* Detail normal (non-revision) */}
+                {openId === r.id && r.status !== 'revision' && (
                   <tr>
                     <td colSpan={5}>
                       <div className="detail-box">
@@ -407,15 +581,46 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
 
   async function confirmAct() {
     const { row, action } = confirm
-    const newStatus = action === 'approved' ? 'approved' : action === 'rejected' ? 'rejected' : 'revision'
     setProcessing(true)
-    await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
-    await supabase.from('approval_history').insert({
-      reimbursement_id: row.id,
-      approver_id: profile.id,
-      action: newStatus,
-      notes: noteDraft[row.id] || null,
-    })
+
+    if (action === 'approved') {
+      const isSupervisorStep = row.required_role === 'supervisor'
+      const needsManager = Number(row.total_amount) >= 5000000
+
+      if (isSupervisorStep && needsManager) {
+        // Nominal >= 5jt: supervisor approve → lanjut ke manager (masih submitted)
+        await supabase.from('reimbursements')
+          .update({ required_role: 'manager' })
+          .eq('id', row.id)
+        await supabase.from('approval_history').insert({
+          reimbursement_id: row.id,
+          approver_id: profile.id,
+          action: 'approved',
+          notes: (noteDraft[row.id] || '') + ' [Disetujui Supervisor, diteruskan ke Manager]',
+        })
+      } else {
+        // Nominal < 5jt atau sudah tahap manager → selesai, ke finance
+        await supabase.from('reimbursements')
+          .update({ status: 'approved' })
+          .eq('id', row.id)
+        await supabase.from('approval_history').insert({
+          reimbursement_id: row.id,
+          approver_id: profile.id,
+          action: 'approved',
+          notes: noteDraft[row.id] || null,
+        })
+      }
+    } else {
+      const newStatus = action === 'rejected' ? 'rejected' : 'revision'
+      await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
+      await supabase.from('approval_history').insert({
+        reimbursement_id: row.id,
+        approver_id: profile.id,
+        action: newStatus,
+        notes: noteDraft[row.id] || null,
+      })
+    }
+
     setProcessing(false)
     setConfirm(null)
     onActed && onActed()
@@ -435,16 +640,36 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
   // ---- Bulk confirm action ----
   async function confirmBulkAct() {
     const { action } = bulkConfirm
-    const newStatus = action === 'approved' ? 'approved' : action === 'rejected' ? 'rejected' : 'revision'
     setProcessing(true)
     for (const id of selected) {
-      await supabase.from('reimbursements').update({ status: newStatus }).eq('id', id)
-      await supabase.from('approval_history').insert({
-        reimbursement_id: id,
-        approver_id: profile.id,
-        action: newStatus,
-        notes: bulkNote || `Bulk ${action}`,
-      })
+      const row = rows.find((x) => x.id === id)
+      if (!row) continue
+
+      if (action === 'approved') {
+        const isSupervisorStep = row.required_role === 'supervisor'
+        const needsManager = Number(row.total_amount) >= 5000000
+
+        if (isSupervisorStep && needsManager) {
+          await supabase.from('reimbursements').update({ required_role: 'manager' }).eq('id', id)
+          await supabase.from('approval_history').insert({
+            reimbursement_id: id, approver_id: profile.id, action: 'approved',
+            notes: (bulkNote || '') + ' [Disetujui Supervisor, diteruskan ke Manager]',
+          })
+        } else {
+          await supabase.from('reimbursements').update({ status: 'approved' }).eq('id', id)
+          await supabase.from('approval_history').insert({
+            reimbursement_id: id, approver_id: profile.id, action: 'approved',
+            notes: bulkNote || 'Bulk approve',
+          })
+        }
+      } else {
+        const newStatus = action === 'rejected' ? 'rejected' : 'revision'
+        await supabase.from('reimbursements').update({ status: newStatus }).eq('id', id)
+        await supabase.from('approval_history').insert({
+          reimbursement_id: id, approver_id: profile.id, action: newStatus,
+          notes: bulkNote || `Bulk ${action}`,
+        })
+      }
     }
     setProcessing(false)
     setBulkConfirm(null)
@@ -454,9 +679,16 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
   }
 
   const ACTION_META = {
-    approved: { label: 'Approve', color: 'var(--success)', icon: '✓', desc: 'Pengajuan akan diteruskan ke Finance Verification.' },
-    rejected: { label: 'Reject', color: 'var(--danger)', icon: '✕', desc: 'Pengajuan akan ditolak dan employee akan diberitahu.' },
-    revision: { label: 'Kembalikan untuk Revisi', color: '#b35900', icon: '↩', desc: 'Pengajuan dikembalikan ke employee untuk diperbaiki.' },
+    approved: {
+      label: 'Approve',
+      color: 'var(--success)',
+      icon: '✓',
+      desc: (row) => row && row.required_role === 'supervisor' && Number(row.total_amount) >= 5000000
+        ? 'Nominal ≥ Rp5jt — setelah Anda setujui, pengajuan diteruskan ke Manager untuk approval tahap 2.'
+        : 'Pengajuan akan diteruskan ke Finance Verification.',
+    },
+    rejected: { label: 'Reject', color: 'var(--danger)', icon: '✕', desc: () => 'Pengajuan akan ditolak dan employee akan diberitahu.' },
+    revision: { label: 'Kembalikan untuk Revisi', color: '#b35900', icon: '↩', desc: () => 'Pengajuan dikembalikan ke employee untuk diperbaiki.' },
   }
 
   const queueLabel = canSeeAll
@@ -546,7 +778,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
               {ACTION_META[confirm.action].icon}
             </div>
             <h3 className="confirm-title">Konfirmasi {ACTION_META[confirm.action].label}</h3>
-            <p className="confirm-desc">{ACTION_META[confirm.action].desc}</p>
+            <p className="confirm-desc">{ACTION_META[confirm.action].desc(confirm.row)}</p>
 
             <div className="confirm-detail">
               <div className="confirm-row"><span>No. Request</span><strong>{confirm.row.request_no}</strong></div>
@@ -591,9 +823,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
             <p className="confirm-desc">
               Anda akan {ACTION_META[bulkConfirm.action].label.toLowerCase()} <strong>{selected.length} pengajuan</strong> sekaligus.
               Aksi ini tidak bisa dibatalkan.
-            </p>
-
-            <div className="confirm-detail">
+            </p>            <div className="confirm-detail">
               {selected.map((id) => {
                 const r = rows.find((x) => x.id === id)
                 return r ? (
@@ -763,201 +993,202 @@ function Dashboard({ refreshKey, profile }) {
   const [filterCategory, setFilterCategory] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [search, setSearch] = useState('')
   const [qrModal, setQrModal] = useState(null)
+  const [docMenu, setDocMenu] = useState(null)
 
-  async function printSlip(r) {
-    // Ambil detail item
+  useEffect(() => {
+    const close = () => setDocMenu(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, []) // row.id yang menu-nya terbuka
+
+  async function printSlip(r, savePdf = false) {
     const { data: items } = await supabase
-      .from('reimbursement_items')
-      .select('*')
-      .eq('reimbursement_id', r.id)
-      .order('expense_date')
+      .from('reimbursement_items').select('*')
+      .eq('reimbursement_id', r.id).order('expense_date')
 
-    // Ambil riwayat approval
     const { data: history } = await supabase
-      .from('approval_history')
-      .select('*, profiles(full_name, role)')
-      .eq('reimbursement_id', r.id)
-      .order('created_at')
+      .from('approval_history').select('*, profiles(full_name, role, department)')
+      .eq('reimbursement_id', r.id).order('created_at')
 
-    // Generate QR sebagai data URL
     const qrDataUrl = await QRCode.toDataURL(trackUrl(r.request_no), { width: 110, margin: 1 })
+    const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
 
-    const rupiah = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
-    const actionLabel = { submitted: 'Diajukan', approved: 'Disetujui', rejected: 'Ditolak', revision: 'Dikembalikan', verified: 'Diverifikasi' }
+    // Ekstrak nama dari history berdasarkan role & urutan
+    const hist = history || []
+    const employeeName   = r.profiles?.full_name || '—'
+    const supervisorRow  = hist.find((h) => h.action === 'approved' && h.profiles?.role === 'supervisor')
+    const managerRow     = hist.find((h) => h.action === 'approved' && h.profiles?.role === 'manager')
+    const verifierRow    = hist.find((h) => h.action === 'verified')
+    const needsManager   = Number(r.total_amount) >= 5000000
 
-    const itemRows = (items || []).map((it) => `
+    const supervisorName = supervisorRow?.profiles?.full_name || null
+    const managerName    = managerRow?.profiles?.full_name    || null
+    const verifierName   = verifierRow?.profiles?.full_name   || null
+
+    const itemRows = (items || []).map((it, i) => `
       <tr>
+        <td style="text-align:center">${i + 1}</td>
         <td>${it.expense_date}</td>
         <td>${it.category}</td>
         <td>${it.description || '—'}</td>
-        <td style="text-align:right">${rupiah(it.amount)}</td>
+        <td style="text-align:right">${rp(it.amount)}</td>
       </tr>`).join('')
 
-    const historyRows = (history || []).map((h) => `
-      <tr>
-        <td>${new Date(h.created_at).toLocaleString('id-ID')}</td>
-        <td>${actionLabel[h.action] || h.action}</td>
-        <td>${h.profiles?.full_name || '—'} (${h.profiles?.role || '—'})</td>
-        <td>${h.notes || '—'}</td>
-      </tr>`).join('')
+    // Kolom tanda tangan dinamis
+    const signBox = (label, role, name) => `
+      <div class="sign-box">
+        <div class="sign-space">
+          ${name ? `<div class="pre-filled">${name}</div>` : ''}
+        </div>
+        <div class="sign-name">${label}</div>
+        <div class="sign-role">(${role})</div>
+      </div>`
+
+    const signCols = [
+      signBox('Pembuat Pengajuan', 'Employee', employeeName),
+      signBox('Menyetujui Tahap 1', 'Supervisor', supervisorName),
+      ...(needsManager ? [signBox('Menyetujui Tahap 2', 'Manager', managerName)] : []),
+      signBox('Verifikasi Finance', 'Finance Staff/Manager', verifierName),
+    ].join('')
+
+    const printDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
 
     const html = `<!DOCTYPE html>
-<html lang="id">
-<head>
-  <meta charset="UTF-8"/>
-  <title>Bukti Reimbursement ${r.request_no}</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #1c2230; padding: 24px; }
-    .slip { max-width: 720px; margin: 0 auto; }
+<html lang="id"><head>
+<meta charset="UTF-8"/>
+<title>Slip Reimbursement ${r.request_no}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 28px 32px; }
 
-    /* Header */
-    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #14213d; padding-bottom: 14px; margin-bottom: 16px; }
-    .header-left .title { font-size: 18px; font-weight: 800; color: #14213d; letter-spacing: 0.5px; }
-    .header-left .subtitle { font-size: 11px; color: #6b7280; margin-top: 2px; }
-    .header-right { text-align: right; }
-    .doc-title { font-size: 13px; font-weight: 700; color: #0f6e6e; text-transform: uppercase; letter-spacing: 0.5px; }
-    .req-no { font-size: 15px; font-weight: 800; color: #14213d; margin-top: 2px; }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .brand { font-size: 20px; font-weight: 900; color: #14213d; }
+  .brand span { color: #0f6e6e; }
+  .doc-label { text-align: right; }
+  .doc-label .title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #14213d; }
+  .doc-label .no { font-size: 15px; font-weight: 900; color: #0f6e6e; }
+  hr.thick { border: none; border-top: 2.5px solid #14213d; margin: 10px 0; }
+  hr.thin  { border: none; border-top: 1px solid #ccc; margin: 10px 0; }
 
-    /* SAH stamp */
-    .stamp-area { display: flex; justify-content: flex-end; margin-bottom: 14px; }
-    .stamp {
-      border: 3px solid #1f8a4c;
-      color: #1f8a4c;
-      font-size: 18px;
-      font-weight: 900;
-      padding: 6px 20px;
-      border-radius: 6px;
-      letter-spacing: 3px;
-      transform: rotate(-5deg);
-    }
+  .sah { display: inline-block; border: 2.5px solid #1f8a4c; color: #1f8a4c; font-size: 13px;
+    font-weight: 900; padding: 3px 14px; border-radius: 4px; letter-spacing: 2px;
+    transform: rotate(-4deg); float: right; margin-top: -4px; }
 
-    /* Info grid */
-    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #f6f7f9; border-radius: 6px; padding: 12px; margin-bottom: 14px; }
-    .info-item .label { font-size: 10px; color: #6b7280; text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; }
-    .info-item .value { font-size: 13px; font-weight: 600; margin-top: 2px; }
+  .info-row { display: flex; gap: 0; margin: 8px 0 12px; }
+  .info-col { flex: 1; }
+  .info-col .lbl { font-size: 10px; color: #666; font-weight: 700; text-transform: uppercase; }
+  .info-col .val { font-size: 12px; font-weight: 600; margin-top: 1px; }
 
-    /* Tables */
-    table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
-    th { background: #14213d; color: #fff; padding: 7px 10px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; }
-    td { padding: 7px 10px; border-bottom: 1px solid #e3e6ea; font-size: 12px; }
-    tr:last-child td { border-bottom: none; }
-    .total-row td { font-weight: 700; background: #e6f3f3; color: #0f6e6e; font-size: 13px; border-top: 2px solid #0f6e6e; }
+  .alur-box { background: #f0faf4; border-left: 3px solid #1f8a4c; padding: 5px 10px;
+    font-size: 11px; color: #14213d; margin-bottom: 10px; border-radius: 0 4px 4px 0; }
+  .alur-box strong { font-weight: 700; }
 
-    /* QR + signature row */
-    .bottom-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 20px; border-top: 1px solid #e3e6ea; padding-top: 16px; }
-    .qr-area { text-align: center; }
-    .qr-area img { border: 1px solid #e3e6ea; border-radius: 4px; }
-    .qr-label { font-size: 10px; color: #6b7280; margin-top: 4px; }
-    .sign-area { display: flex; gap: 40px; }
-    .sign-box { text-align: center; width: 140px; }
-    .sign-line { border-bottom: 1px solid #14213d; margin-bottom: 6px; height: 40px; }
-    .sign-label { font-size: 10px; color: #6b7280; text-transform: uppercase; font-weight: 700; }
-    .sign-name { font-size: 11px; font-weight: 600; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+  thead th { background: #14213d; color: #fff; padding: 6px 8px; font-size: 10px; text-transform: uppercase; text-align: left; }
+  tbody td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; font-size: 11px; }
+  .total-row td { font-weight: 700; font-size: 12px; background: #e6f3f3; border-top: 2px solid #14213d; }
 
-    /* Footer */
-    .footer { margin-top: 16px; text-align: center; font-size: 10px; color: #9ca3af; border-top: 1px dashed #e3e6ea; padding-top: 10px; }
+  .bottom { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 20px; padding-top: 14px; border-top: 1px solid #e3e6ea; }
+  .qr-wrap { text-align: center; flex-shrink: 0; }
+  .qr-wrap img { border: 1px solid #ddd; border-radius: 4px; }
+  .qr-wrap p { font-size: 9px; color: #888; margin-top: 3px; }
 
-    @media print {
-      body { padding: 12px; }
-      button { display: none !important; }
-    }
-  </style>
-</head>
-<body>
-<div class="slip">
+  .signs { display: flex; gap: 20px; flex-wrap: wrap; justify-content: flex-end; }
+  .sign-box { text-align: center; min-width: 110px; }
+  .sign-space { height: 44px; border-bottom: 1px solid #333; margin-bottom: 5px; position: relative; }
+  .pre-filled { position: absolute; bottom: 4px; left: 0; right: 0; font-size: 10px; font-weight: 700; text-align: center; color: #14213d; }
+  .sign-name { font-size: 10px; font-weight: 700; }
+  .sign-role { font-size: 9px; color: #666; margin-top: 1px; }
 
-  <!-- Header -->
-  <div class="header">
-    <div class="header-left">
-      <div class="title">PCRS</div>
-      <div class="subtitle">Petty Cash Reimbursement System</div>
-    </div>
-    <div class="header-right">
-      <div class="doc-title">Bukti Reimbursement Petty Cash</div>
-      <div class="req-no">${r.request_no}</div>
-    </div>
+  .footer { margin-top: 14px; text-align: center; font-size: 9px; color: #aaa; border-top: 1px dashed #ddd; padding-top: 8px; }
+  @media print { @page { margin: 15mm; } }
+</style>
+</head><body>
+
+<div class="header">
+  <div>
+    <div class="brand">PCRS <span>•</span> Petty Cash</div>
+    <div style="font-size:10px;color:#888;margin-top:2px">Petty Cash Reimbursement System</div>
   </div>
-
-  <!-- SAH stamp -->
-  <div class="stamp-area">
-    <div class="stamp">✓ DOKUMEN SAH</div>
-  </div>
-
-  <!-- Info -->
-  <div class="info-grid">
-    <div class="info-item">
-      <div class="label">Employee</div>
-      <div class="value">${r.profiles?.full_name || '—'}</div>
-    </div>
-    <div class="info-item">
-      <div class="label">Department</div>
-      <div class="value">${r.profiles?.department || '—'}</div>
-    </div>
-    <div class="info-item">
-      <div class="label">Tanggal Pengajuan</div>
-      <div class="value">${r.request_date}</div>
-    </div>
-    <div class="info-item">
-      <div class="label">Tanggal Cetak</div>
-      <div class="value">${new Date().toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' })}</div>
-    </div>
-  </div>
-
-  <!-- Detail Item -->
-  <table>
-    <thead>
-      <tr><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th style="text-align:right">Nominal</th></tr>
-    </thead>
-    <tbody>
-      ${itemRows}
-      <tr class="total-row">
-        <td colspan="3">TOTAL REIMBURSEMENT</td>
-        <td style="text-align:right">${rupiah(r.total_amount)}</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <!-- Riwayat Approval -->
-  <table>
-    <thead>
-      <tr><th>Waktu</th><th>Status</th><th>Oleh</th><th>Catatan</th></tr>
-    </thead>
-    <tbody>${historyRows}</tbody>
-  </table>
-
-  <!-- QR + Tanda Tangan -->
-  <div class="bottom-row">
-    <div class="qr-area">
-      <img src="${qrDataUrl}" width="110" height="110" />
-      <div class="qr-label">Scan untuk verifikasi online</div>
-    </div>
-    <div class="sign-area">
-      <div class="sign-box">
-        <div class="sign-line"></div>
-        <div class="sign-label">Finance Staff</div>
-        <div class="sign-name">( ______________________ )</div>
-      </div>
-      <div class="sign-box">
-        <div class="sign-line"></div>
-        <div class="sign-label">Finance Manager</div>
-        <div class="sign-name">( ______________________ )</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Footer -->
-  <div class="footer">
-    Dokumen ini dicetak otomatis oleh sistem PCRS &nbsp;•&nbsp; ${r.request_no} &nbsp;•&nbsp; ${new Date().toLocaleString('id-ID')}
+  <div class="doc-label">
+    <div class="title">Slip Reimbursement</div>
+    <div class="no">${r.request_no}</div>
   </div>
 </div>
 
-<script>window.onload = () => window.print();</script>
-</body>
-</html>`
+<hr class="thick"/>
 
-    const w = window.open('', '_blank', 'width=800,height=700')
+<div style="overflow:hidden;margin-bottom:8px">
+  <div class="sah">✓ DOKUMEN SAH</div>
+  <div class="info-row">
+    <div class="info-col"><div class="lbl">Nama Karyawan</div><div class="val">${employeeName}</div></div>
+    <div class="info-col"><div class="lbl">Department</div><div class="val">${r.profiles?.department || '—'}</div></div>
+    <div class="info-col"><div class="lbl">Tanggal Pengajuan</div><div class="val">${r.request_date}</div></div>
+    <div class="info-col"><div class="lbl">Tanggal Cetak</div><div class="val">${printDate}</div></div>
+  </div>
+</div>
+
+<div class="alur-box">
+  <strong>Alur Approval:</strong>
+  ${needsManager
+    ? `Employee &rarr; Supervisor (${supervisorName || '—'}) &rarr; Manager (${managerName || '—'}) &rarr; Finance Verification`
+    : `Employee &rarr; Supervisor (${supervisorName || '—'}) &rarr; Finance Verification`}
+</div>
+
+<hr class="thin"/>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:28px;text-align:center">No</th>
+      <th style="width:88px">Tanggal</th>
+      <th style="width:100px">Kategori</th>
+      <th>Keterangan</th>
+      <th style="width:110px;text-align:right">Nominal</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${itemRows}
+    <tr class="total-row">
+      <td colspan="4" style="padding:6px 8px">TOTAL</td>
+      <td style="text-align:right;padding:6px 8px">${rp(r.total_amount)}</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="bottom">
+  <div class="qr-wrap">
+    <img src="${qrDataUrl}" width="100" height="100"/>
+    <p>Scan untuk verifikasi</p>
+  </div>
+  <div class="signs">${signCols}</div>
+</div>
+
+<div class="footer">
+  Dicetak otomatis oleh PCRS &nbsp;•&nbsp; ${r.request_no} &nbsp;•&nbsp; ${new Date().toLocaleString('id-ID')}
+</div>
+
+<div id="save-hint" style="display:none;margin-top:20px;background:#f0faf4;border:1px solid #1f8a4c;border-radius:8px;padding:14px 18px;text-align:center;">
+  <div style="font-size:14px;font-weight:700;color:#14213d;margin-bottom:8px">📥 Simpan sebagai PDF</div>
+  <div style="font-size:12px;color:#444;margin-bottom:12px">Klik tombol di bawah, lalu pilih <strong>"Save as PDF"</strong> atau <strong>"Microsoft Print to PDF"</strong> sebagai printer.</div>
+  <button onclick="window.print()" style="background:#14213d;color:#fff;border:none;border-radius:6px;padding:10px 28px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.3px">
+    📥 Simpan PDF Sekarang
+  </button>
+</div>
+
+<script>
+  window.onload = () => {
+    ${savePdf
+      ? `document.getElementById('save-hint').style.display='block';`
+      : `window.print();`
+    }
+  }
+</script>
+</body></html>`
+
+    const w = window.open('', '_blank', 'width=860,height=680')
     w.document.write(html)
     w.document.close()
   }
@@ -1000,14 +1231,24 @@ function Dashboard({ refreshKey, profile }) {
     }
     if (dateFrom && r.request_date < dateFrom) return false
     if (dateTo && r.request_date > dateTo) return false
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      const matchNo   = r.request_no?.toLowerCase().includes(q)
+      const matchName = r.profiles?.full_name?.toLowerCase().includes(q)
+      const matchDept = r.profiles?.department?.toLowerCase().includes(q)
+      const matchAmt  = String(r.total_amount).includes(q)
+      if (!matchNo && !matchName && !matchDept && !matchAmt) return false
+    }
     return true
   })
 
   const resetFilters = () => {
-    setFilterStatus('all'); setFilterDept('all'); setFilterCategory('all'); setDateFrom(''); setDateTo('')
+    setFilterStatus('all'); setFilterDept('all'); setFilterCategory('all')
+    setDateFrom(''); setDateTo(''); setSearch('')
   }
 
   const activeChips = []
+  if (search.trim()) activeChips.push({ key: 'search', label: `"${search}"`, clear: () => setSearch('') })
   if (filterStatus !== 'all') activeChips.push({ key: 'status', label: STATUS_LABEL[filterStatus], clear: () => setFilterStatus('all') })
   if (filterDept !== 'all') activeChips.push({ key: 'dept', label: filterDept, clear: () => setFilterDept('all') })
   if (filterCategory !== 'all') activeChips.push({ key: 'cat', label: filterCategory, clear: () => setFilterCategory('all') })
@@ -1027,6 +1268,21 @@ function Dashboard({ refreshKey, profile }) {
           <div className="filter-title"><span className="filter-icon">⚲</span> Filter Data</div>
           {activeChips.length > 0 && (
             <span className="filter-clear-all" onClick={resetFilters}>Hapus semua filter</span>
+          )}
+        </div>
+
+        {/* Search bar */}
+        <div className="search-bar-wrap">
+          <span className="search-icon">🔍</span>
+          <input
+            className="search-bar-input"
+            type="text"
+            placeholder="Cari no. request, nama karyawan, departemen, atau nominal..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search && (
+            <span className="search-clear" onClick={() => setSearch('')}>✕</span>
           )}
         </div>
 
@@ -1109,9 +1365,27 @@ function Dashboard({ refreshKey, profile }) {
                   <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
                   <td>
                     {r.status === 'verified' && (r.employee_id === profile.id || ['finance_staff', 'finance_manager', 'admin'].includes(profile.role)) && (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="btn btn-primary btn-sm" onClick={() => setQrModal(r)}>QR</button>
-                        <button className="btn btn-sm" style={{ background: '#14213d', color: '#fff' }} onClick={() => printSlip(r)}>🖨 Print</button>
+                      <div style={{ position: 'relative' }}>
+                        <button
+                          className="btn btn-sm"
+                          style={{ background: '#14213d', color: '#fff', whiteSpace: 'nowrap' }}
+                          onClick={(e) => { e.stopPropagation(); setDocMenu(docMenu === r.id ? null : r.id) }}
+                        >
+                          📄 Dokumen ▾
+                        </button>
+                        {docMenu === r.id && (
+                          <div className="doc-dropdown" onClick={(e) => e.stopPropagation()}>
+                            <div className="doc-dropdown-item" onClick={() => { setQrModal(r); setDocMenu(null) }}>
+                              <span>🔲</span> Tampilkan QR
+                            </div>
+                            <div className="doc-dropdown-item" onClick={() => { printSlip(r, false); setDocMenu(null) }}>
+                              <span>🖨</span> Print Slip
+                            </div>
+                            <div className="doc-dropdown-item" onClick={() => { printSlip(r, true); setDocMenu(null) }}>
+                              <span>📥</span> Simpan PDF
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </td>
@@ -1206,7 +1480,7 @@ export default function App() {
         <div className="tab-content" key={tab}>
           {tab === 'dashboard' && <Dashboard refreshKey={refreshKey} profile={profile} />}
           {tab === 'submit' && <SubmitForm profile={profile} onSubmitted={bump} />}
-          {tab === 'mine' && <MyRequests profile={profile} refreshKey={refreshKey} />}
+          {tab === 'mine' && <MyRequests profile={profile} refreshKey={refreshKey} onRefresh={bump} />}
           {tab === 'approval' && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
           {tab === 'finance' && isFinance && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
           {tab === 'admin' && profile.role === 'admin' && <AdminPanel />}
