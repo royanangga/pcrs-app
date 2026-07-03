@@ -1545,16 +1545,8 @@ function Dashboard({ refreshKey, profile }) {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [search, setSearch] = useState('')
-  const [qrModal, setQrModal] = useState(null)
-  const [docMenu, setDocMenu] = useState(null)
   const [selectedPrintIds, setSelectedPrintIds] = useState([])
   const [bulkPrinting, setBulkPrinting] = useState(false)
-
-  useEffect(() => {
-    const close = () => setDocMenu(null)
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
-  }, []) // row.id yang menu-nya terbuka
 
   async function fetchSlipParts(r) {
     const { data: items } = await supabase
@@ -2022,28 +2014,13 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
                   <td><span className={`badge badge-${r.status}`}>{statusLabelFor(r)}</span></td>
                   <td>
                     {r.status === 'verified' && (isFinanceOrAdmin || r.profiles?.department === profile.department) && (
-                      <div style={{ position: 'relative' }}>
-                        <button
-                          className="btn btn-sm"
-                          style={{ background: '#14213d', color: '#fff', whiteSpace: 'nowrap' }}
-                          onClick={(e) => { e.stopPropagation(); setDocMenu(docMenu === r.id ? null : r.id) }}
-                        >
-                          📄 Dokumen ▾
-                        </button>
-                        {docMenu === r.id && (
-                          <div className="doc-dropdown" onClick={(e) => e.stopPropagation()}>
-                            <div className="doc-dropdown-item" onClick={() => { setQrModal(r); setDocMenu(null) }}>
-                              <span>🔲</span> Tampilkan QR
-                            </div>
-                            <div className="doc-dropdown-item" onClick={() => { printSlip(r, false); setDocMenu(null) }}>
-                              <span>🖨</span> Print Slip
-                            </div>
-                            <div className="doc-dropdown-item" onClick={() => { printSlip(r, true); setDocMenu(null) }}>
-                              <span>📥</span> Simpan PDF
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      <button
+                        className="btn btn-sm"
+                        style={{ background: '#14213d', color: '#fff', whiteSpace: 'nowrap' }}
+                        onClick={() => printSlip(r, false)}
+                      >
+                        🖨 Print Slip
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -2052,22 +2029,6 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
           </table>
         )}
       </div>
-
-      {qrModal && (
-        <div className="modal-overlay" onClick={() => setQrModal(null)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-close" onClick={() => setQrModal(null)}>✕</div>
-            <h3 style={{ marginTop: 0 }}>QR Siap Bayar</h3>
-            <div className="checklist-line">Scan untuk verifikasi sebelum pembayaran cash</div>
-            <div style={{ display: 'flex', justifyContent: 'center', margin: '16px 0' }}>
-              <QRBadge value={trackUrl(qrModal.request_no)} size={180} label={qrModal.request_no} />
-            </div>
-            <div className="track-row"><span>Employee</span><strong>{qrModal.profiles?.full_name || '—'}</strong></div>
-            <div className="track-row"><span>Department</span><strong>{qrModal.profiles?.department || '—'}</strong></div>
-            <div className="track-row"><span>Total</span><strong>{rupiah(qrModal.total_amount)}</strong></div>
-          </div>
-        </div>
-      )}
     </>
   )
 }
