@@ -5,8 +5,9 @@ import { AuthScreen } from './App.jsx'
 const STATUS_LABEL = {
   draft: 'Draft',
   submitted: 'Menunggu Approval',
-  approved: 'Menunggu Finance Verification',
-  verified: 'Terverifikasi (Siap Bayar)',
+  approved: 'Menunggu Approval Finance Manager',
+  finance_approved: 'Disetujui Finance Manager — Menunggu Pencairan',
+  verified: 'Terverifikasi (Sudah Dicairkan)',
   rejected: 'Ditolak',
   revision: 'Perlu Revisi',
 }

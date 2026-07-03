@@ -8,8 +8,9 @@ const CATEGORIES = ['Transport', 'Meal', 'Office Supplies', 'Communication', 'Ac
 const STATUS_LABEL = {
   draft: 'Draft',
   submitted: 'Menunggu Approval',
-  approved: 'Menunggu Finance Verification',
-  verified: 'Terverifikasi (Siap Bayar)',
+  approved: 'Menunggu Approval Finance Manager',
+  finance_approved: 'Disetujui Finance Manager — Menunggu Pencairan',
+  verified: 'Terverifikasi (Sudah Dicairkan)',
   rejected: 'Ditolak',
   revision: 'Perlu Revisi',
 }
@@ -28,6 +29,17 @@ function isFinanceUser(profile) {
   if (!profile) return false
   if (profile.role === 'admin') return true
   return (profile.department || '').trim().toLowerCase() === FINANCE_DEPARTMENT.toLowerCase()
+}
+
+// Finance Manager = user dengan role 'manager' DAN department 'Finance' (bukan
+// role tersendiri). Hanya Finance Manager (atau Admin) yang boleh melakukan
+// approval SEBELUM uang dicairkan (tahap "Approval Finance Manager"). Berbeda
+// dengan isFinanceUser() di atas yang mengizinkan SEMUA orang di department
+// Finance untuk tahap "Finance Verification" (SETELAH uang dicairkan).
+function isFinanceManager(profile) {
+  if (!profile) return false
+  if (profile.role === 'admin') return true
+  return profile.role === 'manager' && (profile.department || '').trim().toLowerCase() === FINANCE_DEPARTMENT.toLowerCase()
 }
 
 // Label nama tahap approver untuk ditampilkan ke user (sesuai kolom required_role)
@@ -67,10 +79,16 @@ const SELF_SKIP_TO_MANAGER_ROLES = ['supervisor']
 
 // Menentukan status awal & tahap approval pertama saat pengajuan dibuat/disubmit ulang:
 //  - Pengaju = Manager/Admin (semua nominal) -> tidak ada approval departemen,
-//    status langsung 'approved' (siap Finance Verification)
+//    status langsung 'approved' (siap masuk antrian Approval Finance Manager)
 //  - Pengaju = Supervisor -> approval diri sendiri di-skip, langsung ke Manager
 //    Departemen (status 'submitted', required_role = 'manager')
 //  - Pengaju = Employee -> mulai dari approval Supervisor (status 'submitted')
+//
+// Alur status lengkap sebuah pengajuan:
+//   submitted (approval pimpinan departemen: Supervisor/Manager)
+//     -> approved (menunggu Approval Finance Manager, SEBELUM uang dicairkan)
+//     -> finance_approved (disetujui Finance Manager, siap dicairkan)
+//     -> verified (Finance Verification, SETELAH uang benar-benar dicairkan)
 function requiredRoleFor(submitterRole) {
   if (SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)) return 'manager' // placeholder, tak dipakai (status langsung 'approved')
   if (SELF_SKIP_TO_MANAGER_ROLES.includes(submitterRole)) return 'manager'
@@ -99,10 +117,10 @@ function nextApprovalRole(currentRole, submitterRole, total) {
 }
 
 function approvalFlowLabel(submitterRole, total) {
-  if (SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)) return 'Langsung ke Finance Verification (tanpa approval departemen)'
-  if (SELF_SKIP_TO_MANAGER_ROLES.includes(submitterRole)) return 'Manager Departemen → Finance Verification (approval SPV di-skip karena pengaju adalah SPV)'
-  if (Number(total) >= MANAGER_THRESHOLD) return 'Supervisor → Manager → Finance Verification (nominal ≥ Rp5jt)'
-  return 'Supervisor → Finance Verification'
+  if (SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)) return 'Langsung ke Approval Finance Manager (tanpa approval departemen) → Finance Verification'
+  if (SELF_SKIP_TO_MANAGER_ROLES.includes(submitterRole)) return 'Manager Departemen → Approval Finance Manager → Finance Verification (approval SPV di-skip karena pengaju adalah SPV)'
+  if (Number(total) >= MANAGER_THRESHOLD) return 'Supervisor → Manager → Approval Finance Manager → Finance Verification (nominal ≥ Rp5jt)'
+  return 'Supervisor → Approval Finance Manager → Finance Verification'
 }
 
 function rupiah(n) {
@@ -264,7 +282,7 @@ function SubmitForm({ profile, onSubmitted }) {
       approver_id: profile.id,
       action: 'submitted',
       notes: initialStatusFor(profile.role) === 'approved'
-        ? 'Pengajuan dibuat oleh Manager/Admin — tidak ada approval departemen, langsung ke Finance Verification'
+        ? 'Pengajuan dibuat oleh Manager/Admin — tidak ada approval departemen, langsung ke Approval Finance Manager'
         : 'Pengajuan dibuat oleh employee',
     })
 
@@ -779,7 +797,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
           notes: (noteDraft[row.id] || '') + ` [Disetujui, diteruskan ke ${NEXT_LABEL[next] || next}]`,
         })
       } else {
-        // Approval departemen selesai → lanjut ke Finance Verification Process
+        // Approval departemen selesai → lanjut ke Approval Finance Manager (sebelum pencairan)
         await supabase.from('reimbursements')
           .update({ status: 'approved' })
           .eq('id', row.id)
@@ -880,7 +898,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
         if (!row) return ''
         const next = nextApprovalRole(row.required_role, row.profiles?.role, row.total_amount)
         if (next === 'manager') return 'Nominal ≥ Rp5jt — setelah Anda setujui, pengajuan diteruskan ke Manager Departemen.'
-        return 'Setelah Anda setujui, pengajuan akan masuk ke Finance Verification Process.'
+        return 'Setelah Anda setujui, pengajuan akan masuk ke antrian Approval Finance Manager (sebelum dana dicairkan).'
       },
     },
     rejected: { label: 'Reject', color: 'var(--danger)', icon: '✕', desc: () => 'Pengajuan akan ditolak dan employee akan diberitahu.' },
@@ -1063,7 +1081,153 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
   )
 }
 
-// ---------------------------------------------------------------- FINANCE VERIFICATION ----
+// ---------------------------------------------------------------- APPROVAL FINANCE MANAGER (SEBELUM PENCAIRAN) ----
+// Tahap ini WAJIB dilalui oleh SEMUA pengajuan dari SEMUA departemen (termasuk
+// department Finance sendiri) setelah disetujui pimpinan departemen masing-
+// masing (Supervisor/Manager). Hanya Finance Manager (role='manager' di
+// department Finance) atau Admin yang boleh approve di tahap ini. Uang baru
+// boleh dicairkan SETELAH tahap ini disetujui.
+function FinanceManagerApproval({ profile, refreshKey, onActed }) {
+  const [rows, setRows] = useState([])
+  const [noteDraft, setNoteDraft] = useState({})
+  const [confirm, setConfirm] = useState(null) // { row, action }
+  const [processing, setProcessing] = useState(false)
+
+  useEffect(() => {
+    async function load() {
+      // Lintas departemen: Finance Manager approve pengajuan dari SEMUA departemen.
+      const { data } = await supabase
+        .from('reimbursements')
+        .select('*, profiles(id, full_name, department, role)')
+        .eq('status', 'approved')
+        .order('created_at', { ascending: true })
+      setRows(data || [])
+    }
+    load()
+  }, [refreshKey])
+
+  function requestAct(row, action) {
+    setConfirm({ row, action })
+  }
+
+  async function confirmAct() {
+    const { row, action } = confirm
+    setProcessing(true)
+
+    if (action === 'finance_approved') {
+      await supabase.from('reimbursements').update({ status: 'finance_approved' }).eq('id', row.id)
+      await supabase.from('approval_history').insert({
+        reimbursement_id: row.id,
+        approver_id: profile.id,
+        action: 'finance_approved',
+        notes: noteDraft[row.id] || 'Disetujui Finance Manager — siap dicairkan',
+      })
+    } else {
+      const newStatus = action === 'rejected' ? 'rejected' : 'revision'
+      await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
+      await supabase.from('approval_history').insert({
+        reimbursement_id: row.id,
+        approver_id: profile.id,
+        action: newStatus,
+        notes: action === 'rejected'
+          ? `[Rejected by Finance Manager] ${noteDraft[row.id] || ''}`.trim()
+          : (noteDraft[row.id] || null),
+      })
+    }
+
+    setProcessing(false)
+    setConfirm(null)
+    onActed && onActed()
+  }
+
+  const FM_ACTION_META = {
+    finance_approved: {
+      label: 'Approve', color: 'var(--success)', icon: '✓',
+      desc: () => 'Setelah Anda setujui, pengajuan akan siap dicairkan. Setelah dana ditransfer/dibayarkan, tahap Finance Verification perlu dilakukan untuk menutup pengajuan ini.',
+    },
+    rejected: { label: 'Reject', color: 'var(--danger)', icon: '✕', desc: () => 'Pengajuan akan ditolak dan employee akan diberitahu.' },
+    revision: { label: 'Kembalikan untuk Revisi', color: '#b35900', icon: '↩', desc: () => 'Pengajuan dikembalikan ke employee untuk diperbaiki.' },
+  }
+
+  return (
+    <div className="card">
+      <h3>Approval Finance Manager <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 13 }}>(Sebelum Pencairan — Semua Departemen)</span></h3>
+      {rows.length === 0 ? (
+        <div className="empty-state">Tidak ada pengajuan yang menunggu Approval Finance Manager.</div>
+      ) : (
+        <table>
+          <thead>
+            <tr><th>No. Request</th><th>Employee</th><th>Departemen</th><th>Total</th><th>Catatan</th><th>Aksi</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td>{r.request_no}</td>
+                <td>{r.profiles?.full_name || '—'}</td>
+                <td>{r.profiles?.department || '—'}</td>
+                <td>{rupiah(r.total_amount)}</td>
+                <td>
+                  <input
+                    placeholder="Catatan (opsional)"
+                    value={noteDraft[r.id] || ''}
+                    onChange={(e) => setNoteDraft({ ...noteDraft, [r.id]: e.target.value })}
+                  />
+                </td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  <button className="btn btn-success btn-sm" onClick={() => requestAct(r, 'finance_approved')}>✓ Approve</button>{' '}
+                  <button className="btn btn-danger btn-sm" onClick={() => requestAct(r, 'rejected')}>✕</button>{' '}
+                  <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => requestAct(r, 'revision')}>↩</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {confirm && (
+        <div className="modal-overlay" onClick={() => !processing && setConfirm(null)}>
+          <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-icon" style={{ color: FM_ACTION_META[confirm.action].color }}>
+              {FM_ACTION_META[confirm.action].icon}
+            </div>
+            <h3 className="confirm-title">Konfirmasi {FM_ACTION_META[confirm.action].label}</h3>
+            <p className="confirm-desc">{FM_ACTION_META[confirm.action].desc()}</p>
+
+            <div className="confirm-detail">
+              <div className="confirm-row"><span>No. Request</span><strong>{confirm.row.request_no}</strong></div>
+              <div className="confirm-row"><span>Employee</span><strong>{confirm.row.profiles?.full_name || '—'}</strong></div>
+              <div className="confirm-row"><span>Departemen</span><strong>{confirm.row.profiles?.department || '—'}</strong></div>
+              <div className="confirm-row"><span>Total</span><strong>{rupiah(confirm.row.total_amount)}</strong></div>
+              {noteDraft[confirm.row.id] && (
+                <div className="confirm-row"><span>Catatan</span><strong>{noteDraft[confirm.row.id]}</strong></div>
+              )}
+            </div>
+
+            <div className="confirm-actions">
+              <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => setConfirm(null)} disabled={processing}>
+                Batal
+              </button>
+              <button
+                className="btn"
+                style={{ background: FM_ACTION_META[confirm.action].color, color: '#fff', flex: 1 }}
+                onClick={confirmAct}
+                disabled={processing}
+              >
+                {processing ? <><span className="spinner" />{`${FM_ACTION_META[confirm.action].label}...`}</> : `Ya, ${FM_ACTION_META[confirm.action].label}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- FINANCE VERIFICATION (SETELAH PENCAIRAN) ----
+// Tahap ini dilakukan SETELAH uang benar-benar sudah ditransfer/dibayarkan ke
+// pengaju, sebagai konfirmasi/penutupan pengajuan. Bisa dilakukan oleh SIAPA
+// SAJA di department Finance (role apa pun) + Admin — beda dengan tahap
+// Approval Finance Manager di atas yang khusus Finance Manager/Admin saja.
 function FinanceVerification({ profile, refreshKey, onActed }) {
   const [rows, setRows] = useState([])
   const [names, setNames] = useState({})
@@ -1076,7 +1240,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
       const { data } = await supabase
         .from('reimbursements')
         .select('*')
-        .eq('status', 'approved')
+        .eq('status', 'finance_approved')
         .order('created_at', { ascending: true })
       setRows(data || [])
       if (data && data.length) {
@@ -1113,7 +1277,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
 
   return (
     <div className="card">
-      <h3>Finance Verification</h3>
+      <h3>Finance Verification <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 13 }}>(Konfirmasi setelah dana dicairkan)</span></h3>
       {rows.length === 0 ? (
         <div className="empty-state">Tidak ada pengajuan yang menunggu verifikasi finance.</div>
       ) : (
@@ -1407,17 +1571,23 @@ function Dashboard({ refreshKey, profile }) {
     const submitterRole  = r.profiles?.role
     const supervisorRow  = hist.find((h) => h.action === 'approved' && h.profiles?.role === 'supervisor')
     const managerRow     = hist.find((h) => h.action === 'approved' && h.profiles?.role === 'manager')
+    const financeMgrRow  = hist.find((h) => h.action === 'finance_approved')
     const verifierRow    = hist.find((h) => h.action === 'verified')
     const skipDeptStages = SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)
-    const needsManager   = !skipDeptStages && Number(r.total_amount) >= 5000000
+    // Manager approve baik karena nominal >= threshold, MAUPUN karena pengaju
+    // adalah Supervisor (approval diri sendiri di-skip, langsung ke Manager).
+    const needsManager    = !skipDeptStages
+      && (SELF_SKIP_TO_MANAGER_ROLES.includes(submitterRole) || Number(r.total_amount) >= 5000000)
 
     const supervisorName  = supervisorRow?.profiles?.full_name  || null
     const managerName     = managerRow?.profiles?.full_name     || null
+    const financeMgrName  = financeMgrRow?.profiles?.full_name  || null
     const verifierName    = verifierRow?.profiles?.full_name    || null
 
     const employeeSig     = r.profiles?.signature_url           || null
     const supervisorSig   = supervisorRow?.profiles?.signature_url || null
     const managerSig      = managerRow?.profiles?.signature_url    || null
+    const financeMgrSig   = financeMgrRow?.profiles?.signature_url || null
     const verifierSig     = verifierRow?.profiles?.signature_url   || null
 
     const itemRows = (items || []).map((it, i) => `
@@ -1445,7 +1615,8 @@ function Dashboard({ refreshKey, profile }) {
       signBox('Pembuat Pengajuan', 'Employee', employeeName, employeeSig),
       ...(skipDeptStages ? [] : [signBox('Menyetujui Tahap 1', 'Supervisor', supervisorName, supervisorSig)]),
       ...(needsManager ? [signBox('Menyetujui Tahap 2', 'Manager', managerName, managerSig)] : []),
-      signBox('Verifikasi Finance', 'Finance', verifierName, verifierSig),
+      signBox('Approval Finance Manager', 'Finance Manager', financeMgrName, financeMgrSig),
+      signBox('Verifikasi Pencairan', 'Finance', verifierName, verifierSig),
     ].join('')
 
     const printDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -1666,7 +1837,8 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
 
   const totalApproved = filtered.filter((r) => r.status === 'verified').reduce((s, r) => s + Number(r.total_amount), 0)
   const outstanding = filtered.filter((r) => r.status === 'submitted').length
-  const pendingFinance = filtered.filter((r) => r.status === 'approved').length
+  const pendingFinanceManager = filtered.filter((r) => r.status === 'approved').length
+  const pendingDisbursement = filtered.filter((r) => r.status === 'finance_approved').length
   const verifiedCount = filtered.filter((r) => r.status === 'verified').length
   const rejectedCount = filtered.filter((r) => r.status === 'rejected').length
 
@@ -1771,7 +1943,8 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
         )) : <>
           <div className="kpi-box"><div className="label">Total Reimbursement Terverifikasi</div><div className="value">{rupiah(totalApproved)}</div></div>
           <div className="kpi-box"><div className="label">Menunggu Approval</div><div className="value">{outstanding}</div></div>
-          <div className="kpi-box"><div className="label">Menunggu Finance Verification</div><div className="value">{pendingFinance}</div></div>
+          <div className="kpi-box"><div className="label">Menunggu Approval Finance Manager</div><div className="value">{pendingFinanceManager}</div></div>
+          <div className="kpi-box"><div className="label">Menunggu Pencairan & Verifikasi</div><div className="value">{pendingDisbursement}</div></div>
           <div className="kpi-box"><div className="label">Terverifikasi</div><div className="value">{verifiedCount}</div></div>
           <div className="kpi-box"><div className="label">Rejected</div><div className="value">{rejectedCount}</div></div>
         </>}
@@ -1948,6 +2121,7 @@ export default function App() {
   )
 
   const isApprover = ['supervisor', 'manager', 'admin'].includes(profile.role)
+  const isFinanceMgr = isFinanceManager(profile)
   const isFinance  = isFinanceUser(profile)
 
   function navigate(key) {
@@ -1960,6 +2134,7 @@ export default function App() {
     { key: 'submit',    label: 'Submit Reimbursement',  icon: Ico.submit,    show: true },
     { key: 'mine',      label: 'Pengajuan Saya',        icon: Ico.mine,      show: true },
     { key: 'approval',  label: 'Approval',              icon: Ico.approval,  show: isApprover },
+    { key: 'fm_approval', label: 'Approval Finance Manager', icon: Ico.approval, show: isFinanceMgr },
     { key: 'finance',   label: 'Finance Verification',  icon: Ico.finance,   show: isFinance },
     { key: 'signature', label: 'Tanda Tangan Saya',      icon: Ico.signature, show: true },
     { key: 'admin',     label: 'Admin Panel',           icon: Ico.admin,     show: profile.role === 'admin', accent: true },
@@ -2039,6 +2214,7 @@ export default function App() {
             {tab === 'submit'    && <SubmitForm profile={profile} onSubmitted={bump} />}
             {tab === 'mine'      && <MyRequests profile={profile} refreshKey={refreshKey} onRefresh={bump} />}
             {tab === 'approval'  && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
+            {tab === 'fm_approval' && isFinanceMgr && <FinanceManagerApproval profile={profile} refreshKey={refreshKey} onActed={bump} />}
             {tab === 'finance'   && isFinance  && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
             {tab === 'admin'     && profile.role === 'admin' && <AdminPanel />}
             {tab === 'signature' && <MyProfile profile={profile} onUpdated={loadProfile} />}

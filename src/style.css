@@ -261,6 +261,7 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
 .badge-draft { background: #eee; color: #555; }
 .badge-submitted { background: #fff3cd; color: var(--warning); }
 .badge-approved { background: #d9f4e3; color: var(--success); }
+.badge-finance_approved { background: #dbe9ff; color: #2f6fd1; }
 .badge-rejected { background: #fbe2df; color: var(--danger); }
 .badge-revision { background: #ffe6cc; color: #b35900; }
 .badge-verified { background: #d6e9ff; color: #1457b3; }

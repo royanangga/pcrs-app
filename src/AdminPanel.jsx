@@ -3,13 +3,14 @@ import { supabase } from './supabaseClient'
 
 const ROLES = ['employee', 'supervisor', 'manager', 'admin']
 
-const STATUS_OPTIONS = ['draft', 'submitted', 'approved', 'verified', 'rejected', 'revision']
+const STATUS_OPTIONS = ['draft', 'submitted', 'approved', 'finance_approved', 'verified', 'rejected', 'revision']
 
 const STATUS_LABEL = {
   draft: 'Draft',
   submitted: 'Menunggu Approval',
-  approved: 'Menunggu Finance Verification',
-  verified: 'Terverifikasi (Siap Bayar)',
+  approved: 'Menunggu Approval Finance Manager',
+  finance_approved: 'Disetujui Finance Manager — Menunggu Pencairan',
+  verified: 'Terverifikasi (Sudah Dicairkan)',
   rejected: 'Ditolak',
   revision: 'Perlu Revisi',
 }
