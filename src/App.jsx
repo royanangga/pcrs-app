@@ -14,6 +14,24 @@ const STATUS_LABEL = {
   revision: 'Perlu Revisi',
 }
 
+// Label nama tahap approver untuk ditampilkan ke user (sesuai kolom required_role)
+const APPROVER_ROLE_LABEL = {
+  supervisor: 'SPV Departemen',
+  manager: 'Manager Departemen',
+  finance_manager: 'Finance Manager',
+}
+
+// Label status yang lebih jelas: kalau masih 'submitted', sebutkan menunggu
+// approval dari siapa (berdasarkan required_role), bukan cuma "Menunggu Approval".
+function statusLabelFor(row) {
+  if (!row) return ''
+  if (row.status === 'submitted') {
+    const approverLabel = APPROVER_ROLE_LABEL[row.required_role] || row.required_role
+    return `Menunggu Approval ${approverLabel}`
+  }
+  return STATUS_LABEL[row.status] || row.status
+}
+
 // Batas nominal yang mewajibkan approval tambahan dari Manager Departemen
 const MANAGER_THRESHOLD = 5000000
 
@@ -539,7 +557,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                   <td>{r.request_no}</td>
                   <td>{r.request_date}</td>
                   <td>{rupiah(r.total_amount)}</td>
-                  <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
+                  <td><span className={`badge badge-${r.status}`}>{statusLabelFor(r)}</span></td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     {r.status === 'revision' ? (
                       <button
@@ -1545,7 +1563,7 @@ function Dashboard({ refreshKey, profile }) {
                   <td>{r.profiles?.full_name || '—'}</td>
                   <td>{r.profiles?.department || '—'}</td>
                   <td>{rupiah(r.total_amount)}</td>
-                  <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
+                  <td><span className={`badge badge-${r.status}`}>{statusLabelFor(r)}</span></td>
                   <td>
                     {r.status === 'verified' && (r.employee_id === profile.id || ['finance_staff', 'finance_manager', 'admin'].includes(profile.role)) && (
                       <div style={{ position: 'relative' }}>
