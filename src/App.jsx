@@ -16,6 +16,24 @@ const STATUS_LABEL = {
   revision: 'Perlu Revisi',
 }
 
+// Label aksi untuk baris riwayat approval (approval_history.action) — dipakai
+// di slip cetak untuk menampilkan riwayat approval sampai verified.
+const ACTION_LABEL = {
+  submitted: 'Diajukan',
+  approved: 'Disetujui',
+  finance_approved: 'Disetujui Finance Manager',
+  verified: 'Diverifikasi & Dicairkan',
+  rejected: 'Ditolak',
+  revision: 'Diminta Revisi',
+}
+
+const ROLE_LABEL = {
+  employee: 'Employee',
+  supervisor: 'Supervisor',
+  manager: 'Manager',
+  admin: 'Admin',
+}
+
 // Nama department yang dianggap "Finance" (bisa disesuaikan sesuai penamaan
 // department di organisasi Anda). Pencocokan tidak case-sensitive.
 const FINANCE_DEPARTMENT = 'Finance'
@@ -1640,6 +1658,25 @@ function Dashboard({ refreshKey, profile }) {
         <td style="text-align:right">${rp(it.amount)}</td>
       </tr>`).join('')
 
+    // Riwayat approval — semua entri approval_history untuk pengajuan ini,
+    // diurutkan dari yang paling awal (Diajukan) sampai yang terakhir
+    // (Diverifikasi & Dicairkan), karena hist sudah di-order by created_at asc.
+    const historyRows = hist.map((h) => {
+      const dt = h.created_at
+        ? new Date(h.created_at).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '—'
+      const actorName = h.profiles?.full_name || '—'
+      const actorRole = ROLE_LABEL[h.profiles?.role] || h.profiles?.role || '—'
+      const actionLabel = ACTION_LABEL[h.action] || h.action
+      return `
+      <tr>
+        <td>${dt}</td>
+        <td>${actorName}<br/><span style="color:#888;font-size:9px">${actorRole}</span></td>
+        <td><span class="hist-action hist-${h.action}">${actionLabel}</span></td>
+        <td>${h.notes || '—'}</td>
+      </tr>`
+    }).join('')
+
     // Kolom tanda tangan dinamis. Kalau orangnya sudah menyimpan tanda tangan digital,
     // gambar itu otomatis dipasang di atas nama (tidak perlu tanda tangan basah lagi).
     const signBox = (label, role, name, sigUrl) => `
@@ -1715,6 +1752,21 @@ function Dashboard({ refreshKey, profile }) {
   </tbody>
 </table>
 
+<div class="hist-title">Riwayat Approval</div>
+<table class="hist-table">
+  <thead>
+    <tr>
+      <th style="width:100px">Tanggal &amp; Jam</th>
+      <th style="width:130px">Oleh</th>
+      <th style="width:110px">Aksi</th>
+      <th>Catatan</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${historyRows || '<tr><td colspan="4" style="text-align:center;color:#999">Belum ada riwayat approval.</td></tr>'}
+  </tbody>
+</table>
+
 <div class="bottom">
   <div class="qr-wrap">
     <img src="${qrDataUrl}" width="100" height="100"/>
@@ -1764,6 +1816,17 @@ function Dashboard({ refreshKey, profile }) {
   thead th { background: #14213d; color: #fff; padding: 6px 8px; font-size: 10px; text-transform: uppercase; text-align: left; }
   tbody td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; font-size: 11px; }
   .total-row td { font-weight: 700; font-size: 12px; background: #e6f3f3; border-top: 2px solid #14213d; }
+
+  .hist-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #14213d; margin: 4px 0 6px; }
+  .hist-table thead th { background: #eef1f6; color: #14213d; }
+  .hist-table tbody td { font-size: 10px; vertical-align: top; }
+  .hist-action { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 9px; font-weight: 700; white-space: nowrap; }
+  .hist-submitted { background: #eef1f6; color: #444; }
+  .hist-approved { background: #e6f3ea; color: #1f8a4c; }
+  .hist-finance_approved { background: #e6f0f3; color: #0f6e6e; }
+  .hist-verified { background: #e6f3f3; color: #14213d; }
+  .hist-rejected { background: #fbe6e6; color: #b3261e; }
+  .hist-revision { background: #fff3e0; color: #b35900; }
 
   .bottom { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 20px; padding-top: 14px; border-top: 1px solid #e3e6ea; }
   .qr-wrap { text-align: center; flex-shrink: 0; }
