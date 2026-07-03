@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import QRCode from 'qrcode'
 import { supabase } from './supabaseClient'
 import AdminPanel from './AdminPanel.jsx'
@@ -1178,6 +1178,190 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
   )
 }
 
+// ---------------------------------------------------------------- TANDA TANGAN SAYA ----
+function MyProfile({ profile, onUpdated }) {
+  const canvasRef = useRef(null)
+  const drawing = useRef(false)
+  const hasStroke = useRef(false)
+  const fileInputRef = useRef(null)
+
+  const [signatureUrl, setSignatureUrl] = useState(profile.signature_url || null)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState({ text: '', type: '' })
+
+  useEffect(() => { setSignatureUrl(profile.signature_url || null) }, [profile.signature_url])
+
+  function setupCanvas() {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    // Resolusi internal lebih tinggi dari ukuran tampilan supaya garis tidak buram
+    const ratio = window.devicePixelRatio || 1
+    const rect = canvas.getBoundingClientRect()
+    canvas.width = rect.width * ratio
+    canvas.height = rect.height * ratio
+    const ctx = canvas.getContext('2d')
+    ctx.scale(ratio, ratio)
+    ctx.lineWidth = 2.4
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.strokeStyle = '#14213d'
+  }
+
+  useEffect(() => { setupCanvas() }, [])
+
+  function pointFromEvent(e) {
+    const canvas = canvasRef.current
+    const rect = canvas.getBoundingClientRect()
+    const src = e.touches ? e.touches[0] : e
+    return { x: src.clientX - rect.left, y: src.clientY - rect.top }
+  }
+
+  function startDraw(e) {
+    e.preventDefault()
+    drawing.current = true
+    hasStroke.current = true
+    const { x, y } = pointFromEvent(e)
+    const ctx = canvasRef.current.getContext('2d')
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+  }
+  function moveDraw(e) {
+    if (!drawing.current) return
+    e.preventDefault()
+    const { x, y } = pointFromEvent(e)
+    const ctx = canvasRef.current.getContext('2d')
+    ctx.lineTo(x, y)
+    ctx.stroke()
+  }
+  function endDraw() { drawing.current = false }
+
+  function clearCanvas() {
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    hasStroke.current = false
+    setMsg({ text: '', type: '' })
+  }
+
+  async function uploadBlob(blob) {
+    setSaving(true)
+    setMsg({ text: '', type: '' })
+    try {
+      const path = `${profile.id}/signature.png`
+      const { error: upErr } = await supabase.storage
+        .from('signatures')
+        .upload(path, blob, { upsert: true, contentType: 'image/png' })
+      if (upErr) throw upErr
+
+      // Tambah versi di query string supaya browser tidak memakai cache gambar lama
+      const { data: pub } = supabase.storage.from('signatures').getPublicUrl(path)
+      const versionedUrl = `${pub.publicUrl}?v=${Date.now()}`
+
+      const { error: dbErr } = await supabase.from('profiles')
+        .update({ signature_url: versionedUrl }).eq('id', profile.id)
+      if (dbErr) throw dbErr
+
+      setSignatureUrl(versionedUrl)
+      setMsg({ text: 'Tanda tangan tersimpan. Akan otomatis muncul di slip yang dicetak.', type: 'success' })
+      onUpdated && onUpdated()
+    } catch (err) {
+      setMsg({ text: 'Gagal menyimpan: ' + err.message, type: 'error' })
+    }
+    setSaving(false)
+  }
+
+  function saveDrawing() {
+    if (!hasStroke.current) {
+      setMsg({ text: 'Gambar tanda tangan dulu di area kanvas.', type: 'error' })
+      return
+    }
+    canvasRef.current.toBlob((blob) => { if (blob) uploadBlob(blob) }, 'image/png')
+  }
+
+  function handleFileChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    uploadBlob(file)
+    e.target.value = ''
+  }
+
+  async function removeSignature() {
+    setSaving(true)
+    setMsg({ text: '', type: '' })
+    const path = `${profile.id}/signature.png`
+    await supabase.storage.from('signatures').remove([path])
+    const { error } = await supabase.from('profiles').update({ signature_url: null }).eq('id', profile.id)
+    if (error) setMsg({ text: 'Gagal menghapus: ' + error.message, type: 'error' })
+    else {
+      setSignatureUrl(null)
+      clearCanvas()
+      setMsg({ text: 'Tanda tangan dihapus.', type: 'success' })
+      onUpdated && onUpdated()
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div>
+      <div className="card" style={{ maxWidth: 640 }}>
+        <h3>Tanda Tangan Digital</h3>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: -6, marginBottom: 14 }}>
+          Gambar atau unggah tanda tangan Anda sekali di sini. Setiap kali slip reimbursement dicetak
+          (baik sebagai pemohon maupun approver), tanda tangan ini akan otomatis muncul di kolom tanda tangan Anda.
+        </p>
+
+        {signatureUrl && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>Tanda tangan saat ini</div>
+            <div style={{ border: '1px solid #e3e6ea', borderRadius: 8, padding: 10, display: 'inline-block', background: '#fff' }}>
+              <img src={signatureUrl} alt="Tanda tangan" style={{ height: 60, display: 'block' }} />
+            </div>
+          </div>
+        )}
+
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>
+          {signatureUrl ? 'Gambar ulang tanda tangan baru' : 'Gambar tanda tangan di sini'}
+        </div>
+        <canvas
+          ref={canvasRef}
+          style={{ width: '100%', height: 160, border: '1.5px dashed #c9ced6', borderRadius: 8, background: '#fbfbfc', touchAction: 'none', cursor: 'crosshair' }}
+          onMouseDown={startDraw}
+          onMouseMove={moveDraw}
+          onMouseUp={endDraw}
+          onMouseLeave={endDraw}
+          onTouchStart={startDraw}
+          onTouchMove={moveDraw}
+          onTouchEnd={endDraw}
+        />
+
+        {msg.text && (
+          <div style={{ marginTop: 10, fontSize: 12.5, color: msg.type === 'error' ? 'var(--danger)' : 'var(--success)' }}>
+            {msg.text}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+          <button className="btn btn-primary" disabled={saving} onClick={saveDrawing}>
+            {saving ? 'Menyimpan...' : '✓ Simpan Tanda Tangan'}
+          </button>
+          <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} disabled={saving} onClick={clearCanvas}>
+            Bersihkan Kanvas
+          </button>
+          <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} disabled={saving} onClick={() => fileInputRef.current?.click()}>
+            📁 Unggah Gambar
+          </button>
+          {signatureUrl && (
+            <button className="btn btn-sm btn-danger" disabled={saving} onClick={removeSignature}>
+              Hapus Tanda Tangan
+            </button>
+          )}
+          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------- DASHBOARD ----
 function Dashboard({ refreshKey, profile }) {
   const [all, setAll] = useState([])
@@ -1205,7 +1389,7 @@ function Dashboard({ refreshKey, profile }) {
       .eq('reimbursement_id', r.id).order('expense_date')
 
     const { data: history } = await supabase
-      .from('approval_history').select('*, profiles(full_name, role, department)')
+      .from('approval_history').select('*, profiles(full_name, role, department, signature_url)')
       .eq('reimbursement_id', r.id).order('created_at')
 
     const qrDataUrl = await QRCode.toDataURL(trackUrl(r.request_no), { width: 110, margin: 1 })
@@ -1231,6 +1415,12 @@ function Dashboard({ refreshKey, profile }) {
     const financeMgrName  = financeMgrRow?.profiles?.full_name  || null
     const verifierName    = verifierRow?.profiles?.full_name    || null
 
+    const employeeSig     = r.profiles?.signature_url           || null
+    const supervisorSig   = supervisorRow?.profiles?.signature_url || null
+    const managerSig      = managerRow?.profiles?.signature_url    || null
+    const financeMgrSig   = financeMgrRow?.profiles?.signature_url || null
+    const verifierSig     = verifierRow?.profiles?.signature_url   || null
+
     const itemRows = (items || []).map((it, i) => `
       <tr>
         <td style="text-align:center">${i + 1}</td>
@@ -1240,22 +1430,24 @@ function Dashboard({ refreshKey, profile }) {
         <td style="text-align:right">${rp(it.amount)}</td>
       </tr>`).join('')
 
-    // Kolom tanda tangan dinamis
-    const signBox = (label, role, name) => `
+    // Kolom tanda tangan dinamis. Kalau orangnya sudah menyimpan tanda tangan digital,
+    // gambar itu otomatis dipasang di atas nama (tidak perlu tanda tangan basah lagi).
+    const signBox = (label, role, name, sigUrl) => `
       <div class="sign-box">
         <div class="sign-space">
-          ${name ? `<div class="pre-filled">${name}</div>` : ''}
+          ${sigUrl ? `<img class="sign-img" src="${sigUrl}"/>` : ''}
         </div>
+        <div class="sign-printed-name">${name || '\u00A0'}</div>
         <div class="sign-name">${label}</div>
         <div class="sign-role">(${role})</div>
       </div>`
 
     const signCols = [
-      signBox('Pembuat Pengajuan', 'Employee', employeeName),
-      ...(skipDeptStages ? [] : [signBox('Menyetujui Tahap 1', 'Supervisor', supervisorName)]),
-      ...(needsManager ? [signBox('Menyetujui Tahap 2', 'Manager', managerName)] : []),
-      signBox(skipDeptStages ? 'Menyetujui' : 'Menyetujui Tahap ' + (needsManager ? 3 : 2), 'Finance Manager', financeMgrName),
-      signBox('Verifikasi Finance', 'Finance Staff/Manager', verifierName),
+      signBox('Pembuat Pengajuan', 'Employee', employeeName, employeeSig),
+      ...(skipDeptStages ? [] : [signBox('Menyetujui Tahap 1', 'Supervisor', supervisorName, supervisorSig)]),
+      ...(needsManager ? [signBox('Menyetujui Tahap 2', 'Manager', managerName, managerSig)] : []),
+      signBox(skipDeptStages ? 'Menyetujui' : 'Menyetujui Tahap ' + (needsManager ? 3 : 2), 'Finance Manager', financeMgrName, financeMgrSig),
+      signBox('Verifikasi Finance', 'Finance Staff/Manager', verifierName, verifierSig),
     ].join('')
 
     const printDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -1362,8 +1554,9 @@ function Dashboard({ refreshKey, profile }) {
 
   .signs { display: flex; gap: 20px; flex-wrap: wrap; justify-content: flex-end; }
   .sign-box { text-align: center; min-width: 110px; }
-  .sign-space { height: 44px; border-bottom: 1px solid #333; margin-bottom: 5px; position: relative; }
-  .pre-filled { position: absolute; bottom: 4px; left: 0; right: 0; font-size: 10px; font-weight: 700; text-align: center; color: #14213d; }
+  .sign-space { height: 44px; border-bottom: 1px solid #333; margin-bottom: 3px; position: relative; }
+  .sign-img { max-height: 40px; max-width: 100%; position: absolute; bottom: 2px; left: 0; right: 0; margin: 0 auto; display: block; object-fit: contain; }
+  .sign-printed-name { font-size: 10px; font-weight: 700; text-align: center; color: #14213d; margin-bottom: 5px; min-height: 12px; }
   .sign-name { font-size: 10px; font-weight: 700; }
   .sign-role { font-size: 9px; color: #666; margin-top: 1px; }
 
@@ -1418,7 +1611,7 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
       setLoadingData(true)
       let query = supabase
         .from('reimbursements')
-        .select('*, profiles(full_name, department), reimbursement_items(category)')
+        .select('*, profiles(full_name, department, signature_url), reimbursement_items(category)')
         .order('created_at', { ascending: false })
 
       // Bukan finance/admin: hanya tampilkan department sendiri
@@ -1708,6 +1901,7 @@ const Ico = {
   approval:   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
   finance:    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>,
   admin:      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>,
+  signature:  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17c2-1 3-3 4-5 1.5-3 2-6 3.5-6S12 9 13 12c1 3 2 5 4 5 1.3 0 2-1 3-2"/><path d="M3 21h18"/></svg>,
   logout:     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
   menu:       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>,
   close:      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
@@ -1720,6 +1914,7 @@ const PAGE_TITLE = {
   approval:  'Approval',
   finance:   'Finance Verification',
   admin:     'Admin Panel',
+  signature: 'Tanda Tangan Saya',
 }
 
 export default function App() {
@@ -1736,14 +1931,13 @@ export default function App() {
     return () => sub.subscription.unsubscribe()
   }, [])
 
-  useEffect(() => {
-    async function loadProfile() {
-      if (!session) { setProfile(null); return }
-      const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
-      setProfile(data)
-    }
-    loadProfile()
+  const loadProfile = useCallback(async () => {
+    if (!session) { setProfile(null); return }
+    const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
+    setProfile(data)
   }, [session])
+
+  useEffect(() => { loadProfile() }, [loadProfile])
 
   if (!session) return <AuthScreen />
   if (!profile) return (
@@ -1769,6 +1963,7 @@ export default function App() {
     { key: 'mine',      label: 'Pengajuan Saya',        icon: Ico.mine,      show: true },
     { key: 'approval',  label: 'Approval',              icon: Ico.approval,  show: isApprover },
     { key: 'finance',   label: 'Finance Verification',  icon: Ico.finance,   show: isFinance },
+    { key: 'signature', label: 'Tanda Tangan Saya',      icon: Ico.signature, show: true },
     { key: 'admin',     label: 'Admin Panel',           icon: Ico.admin,     show: profile.role === 'admin', accent: true },
   ].filter((n) => n.show)
 
@@ -1849,6 +2044,7 @@ export default function App() {
             {tab === 'approval'  && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
             {tab === 'finance'   && isFinance  && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
             {tab === 'admin'     && profile.role === 'admin' && <AdminPanel />}
+            {tab === 'signature' && <MyProfile profile={profile} onUpdated={loadProfile} />}
           </div>
         </div>
       </div>
