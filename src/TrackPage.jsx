@@ -14,7 +14,6 @@ const STATUS_LABEL = {
 const APPROVER_ROLE_LABEL = {
   supervisor: 'SPV Departemen',
   manager: 'Manager Departemen',
-  finance_manager: 'Finance Manager',
 }
 
 // Kalau RPC tracking mengembalikan kolom required_role, tampilkan menunggu
