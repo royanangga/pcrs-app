@@ -14,11 +14,24 @@ const STATUS_LABEL = {
   revision: 'Perlu Revisi',
 }
 
+// Nama department yang dianggap "Finance" (bisa disesuaikan sesuai penamaan
+// department di organisasi Anda). Pencocokan tidak case-sensitive.
+const FINANCE_DEPARTMENT = 'Finance'
+
+// User dianggap "Finance" (boleh lihat semua pengajuan lintas departemen &
+// melakukan Finance Verification) kalau department-nya Finance — TIDAK PEDULI
+// role-nya (Employee/Supervisor/Manager di department Finance semua berlaku
+// sama seperti finance staff). Admin juga selalu dianggap Finance.
+function isFinanceUser(profile) {
+  if (!profile) return false
+  if (profile.role === 'admin') return true
+  return (profile.department || '').trim().toLowerCase() === FINANCE_DEPARTMENT.toLowerCase()
+}
+
 // Label nama tahap approver untuk ditampilkan ke user (sesuai kolom required_role)
 const APPROVER_ROLE_LABEL = {
   supervisor: 'SPV Departemen',
   manager: 'Manager Departemen',
-  finance_manager: 'Finance Manager',
 }
 
 // Label status yang lebih jelas: kalau masih 'submitted', sebutkan menunggu
@@ -35,22 +48,24 @@ function statusLabelFor(row) {
 // Batas nominal yang mewajibkan approval tambahan dari Manager Departemen
 const MANAGER_THRESHOLD = 5000000
 
-// Role yang levelnya setara/di atas Manager Departemen: pengajuan mereka
-// langsung masuk ke tahap approval Finance Manager (skip SPV & Dept Manager).
-// PENTING: 'finance_manager' TIDAK dimasukkan ke sini — kalau Finance Manager
-// mengajukan reimbursement untuk dirinya sendiri, pengajuan tetap harus lewat
-// SPV/Manager departemen dulu (pimpinan departemen), baru bisa di-approve oleh
-// Finance Manager. Ini mencegah Finance Manager approve pengajuannya sendiri.
+// Role yang levelnya setara/di atas Manager Departemen: pengajuan mereka tidak
+// punya atasan lagi di departemennya sendiri, jadi langsung lanjut ke Finance
+// Verification tanpa approval departemen. Berlaku SAMA untuk semua departemen
+// termasuk department Finance sendiri (Manager Finance yang mengajukan juga
+// langsung ke Finance Verification, tidak perlu approval SPV).
 const SKIP_DEPT_APPROVAL_ROLES = ['manager', 'admin']
 
-// Menentukan approver pertama yang dituju berdasarkan role pengaju & nominal,
-// sesuai Tabel Workflow (SAP B1 / Power Apps / Excel Logic):
-//  - Pengaju = Manager (semua nominal)      -> langsung Finance Manager
-//  - Pengaju = Employee, nominal >= 5jt     -> mulai dari SPV (lanjut Dept Manager)
-//  - Pengaju = Employee, nominal < 5jt      -> mulai dari SPV (lanjut Finance Manager)
-function requiredRoleFor(submitterRole, total) {
-  if (SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)) return 'finance_manager'
+// Menentukan status awal & tahap approval pertama saat pengajuan dibuat/disubmit ulang:
+//  - Pengaju = Manager/Admin (semua nominal) -> tidak ada approval departemen,
+//    status langsung 'approved' (siap Finance Verification)
+//  - Pengaju = Employee/Supervisor -> mulai dari approval Supervisor (status 'submitted')
+function requiredRoleFor(submitterRole) {
+  if (SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)) return 'manager' // placeholder, tak dipakai (status langsung 'approved')
   return 'supervisor'
+}
+
+function initialStatusFor(submitterRole) {
+  return SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole) ? 'approved' : 'submitted'
 }
 
 // Menentukan tahap approval berikutnya SETELAH sebuah step di-approve.
@@ -59,19 +74,16 @@ function requiredRoleFor(submitterRole, total) {
 function nextApprovalRole(currentRole, submitterRole, total) {
   const needsDeptManager = Number(total) >= MANAGER_THRESHOLD && !SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)
   if (currentRole === 'supervisor') {
-    return needsDeptManager ? 'manager' : 'finance_manager'
+    return needsDeptManager ? 'manager' : null
   }
-  if (currentRole === 'manager') {
-    return 'finance_manager'
-  }
-  // currentRole === 'finance_manager' -> selesai, lanjut Finance Verification
+  // currentRole === 'manager' -> selesai, lanjut Finance Verification
   return null
 }
 
 function approvalFlowLabel(submitterRole, total) {
-  if (SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)) return 'Finance Manager → Finance Verification'
-  if (Number(total) >= MANAGER_THRESHOLD) return 'Supervisor → Manager → Finance Manager → Finance Verification (nominal ≥ Rp5jt)'
-  return 'Supervisor → Finance Manager → Finance Verification'
+  if (SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)) return 'Langsung ke Finance Verification (tanpa approval departemen)'
+  if (Number(total) >= MANAGER_THRESHOLD) return 'Supervisor → Manager → Finance Verification (nominal ≥ Rp5jt)'
+  return 'Supervisor → Finance Verification'
 }
 
 function rupiah(n) {
@@ -195,14 +207,14 @@ function SubmitForm({ profile, onSubmitted }) {
     setSaving(true)
     setShowConfirm(false)
 
-    const required_role = requiredRoleFor(profile.role, total)
+    const required_role = requiredRoleFor(profile.role)
     const { data: header, error: hErr } = await supabase
       .from('reimbursements')
       .insert({
         request_no: generateRequestNo(),
         employee_id: profile.id,
         total_amount: total,
-        status: 'submitted',
+        status: initialStatusFor(profile.role),
         required_role,
       })
       .select()
@@ -232,7 +244,9 @@ function SubmitForm({ profile, onSubmitted }) {
       reimbursement_id: header.id,
       approver_id: profile.id,
       action: 'submitted',
-      notes: 'Pengajuan dibuat oleh employee',
+      notes: initialStatusFor(profile.role) === 'approved'
+        ? 'Pengajuan dibuat oleh Manager/Admin — tidak ada approval departemen, langsung ke Finance Verification'
+        : 'Pengajuan dibuat oleh employee',
     })
 
     if (files.length > 0) {
@@ -514,11 +528,11 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
       }
     }
 
-    // Update status kembali ke submitted, required_role kembali ke tahap awal
-    // (SPV untuk Employee, atau langsung Finance Manager untuk Manager/atas)
+    // Update status kembali ke submitted (atau langsung approved kalau Manager/
+    // Admin, sama seperti alur submit baru), required_role kembali ke tahap awal
     await supabase.from('reimbursements').update({
-      status: 'submitted',
-      required_role: requiredRoleFor(profile.role, total),
+      status: initialStatusFor(profile.role),
+      required_role: requiredRoleFor(profile.role),
       total_amount: total,
     }).eq('id', r.id)
 
@@ -582,7 +596,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                       <div className="revision-panel">
                         <div className="revision-header">
                           ✏ Revisi Pengajuan <span>{r.request_no}</span>
-                          <div className="revision-note">Nomor request tetap sama. Setelah submit ulang akan kembali ke antrian approval tahap awal ({requiredRoleFor(profile.role, editTotal) === 'finance_manager' ? 'Finance Manager' : 'Supervisor'}).</div>
+                          <div className="revision-note">Nomor request tetap sama. Setelah submit ulang, alur approval: {approvalFlowLabel(profile.role, editTotal)}.</div>
                         </div>
 
                         {editItems.map((it, i) => (
@@ -684,8 +698,10 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
   const [bulkConfirm, setBulkConfirm] = useState(null) // bulk: { action }
   const [processing, setProcessing] = useState(false)
 
-  // Finance Manager & Admin: lintas departemen (tidak dibatasi department pengaju)
-  const canSeeAll = profile.role === 'finance_manager' || profile.role === 'admin'
+  // Admin: lintas departemen (tidak dibatasi department pengaju).
+  // Supervisor & Manager (termasuk yang di department Finance) hanya melihat
+  // antrian approval di department mereka sendiri, sama seperti department lain.
+  const isAdmin = profile.role === 'admin'
 
   useEffect(() => {
     async function load() {
@@ -695,48 +711,17 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
         .select('*, profiles(id, full_name, department, role)')
         .eq('status', 'submitted')
 
-      // Admin melihat semua tahap; role lain (termasuk finance_manager) hanya
-      // melihat pengajuan yang memang sedang menunggu approval di tahap mereka,
-      // sesuai kolom required_role (Waiting Approval SPV/Dept Manager/Finance Manager)
-      if (profile.role !== 'admin') query = query.eq('required_role', profile.role)
+      // Admin melihat semua tahap; role lain hanya melihat pengajuan yang memang
+      // sedang menunggu approval di tahap mereka, sesuai kolom required_role
+      // (Waiting Approval SPV / Dept Manager)
+      if (!isAdmin) query = query.eq('required_role', profile.role)
 
       const { data } = await query.order('created_at', { ascending: true })
 
-      // Filter tambahan di client: SPV & Dept Manager hanya melihat departemen sendiri.
-      // Finance Manager & Admin melihat lintas departemen.
-      let filtered = canSeeAll
+      // Filter tambahan di client: Supervisor & Manager hanya melihat departemen sendiri.
+      const filtered = isAdmin
         ? (data || [])
         : (data || []).filter((r) => r.profiles?.department === profile.department)
-
-      // Guard tambahan: Finance Manager hanya boleh approve pengajuan yang
-      // SUDAH disetujui oleh pimpinan departemen (SPV/Manager). Ini mencegah
-      // Finance Manager approve pengajuan yang belum lewat approval departemen
-      // (termasuk mencegah self-approval atas pengajuannya sendiri).
-      // Pengecualian: pengajuan dari Manager/Admin memang sengaja skip SPV &
-      // Dept Manager sesuai alur workflow, jadi tidak perlu riwayat approval dept.
-      if (profile.role === 'finance_manager' && filtered.length > 0) {
-        const needsCheck = filtered.filter((r) => !SKIP_DEPT_APPROVAL_ROLES.includes(r.profiles?.role))
-        const ids = needsCheck.map((r) => r.id)
-
-        let approvedByDeptHead = new Set()
-        if (ids.length > 0) {
-          const { data: hist } = await supabase
-            .from('approval_history')
-            .select('reimbursement_id, action, profiles(role)')
-            .in('reimbursement_id', ids)
-            .eq('action', 'approved')
-
-          approvedByDeptHead = new Set(
-            (hist || [])
-              .filter((h) => ['supervisor', 'manager'].includes(h.profiles?.role))
-              .map((h) => h.reimbursement_id)
-          )
-        }
-
-        filtered = filtered.filter((r) =>
-          SKIP_DEPT_APPROVAL_ROLES.includes(r.profiles?.role) || approvedByDeptHead.has(r.id)
-        )
-      }
 
       setRows(filtered)
 
@@ -748,7 +733,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
       setEmpProfiles(map)
     }
     load()
-  }, [profile.role, profile.department, refreshKey, canSeeAll])
+  }, [profile.role, profile.department, refreshKey, isAdmin])
 
   function requestAct(row, action) {
     setConfirm({ row, action })
@@ -764,7 +749,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
 
       if (next) {
         // Masih ada tahap approval berikutnya (masih status 'submitted')
-        const NEXT_LABEL = { manager: 'Manager', finance_manager: 'Finance Manager' }
+        const NEXT_LABEL = { manager: 'Manager' }
         await supabase.from('reimbursements')
           .update({ required_role: next })
           .eq('id', row.id)
@@ -775,7 +760,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
           notes: (noteDraft[row.id] || '') + ` [Disetujui, diteruskan ke ${NEXT_LABEL[next] || next}]`,
         })
       } else {
-        // Tahap Finance Manager selesai → lanjut ke Finance Verification Process
+        // Approval departemen selesai → lanjut ke Finance Verification Process
         await supabase.from('reimbursements')
           .update({ status: 'approved' })
           .eq('id', row.id)
@@ -827,7 +812,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
       if (action === 'approved') {
         const submitterRole = row.profiles?.role
         const next = nextApprovalRole(row.required_role, submitterRole, row.total_amount)
-        const NEXT_LABEL = { manager: 'Manager', finance_manager: 'Finance Manager' }
+        const NEXT_LABEL = { manager: 'Manager' }
 
         if (next) {
           await supabase.from('reimbursements').update({ required_role: next }).eq('id', id)
@@ -865,7 +850,6 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
   const REJECTED_BY_LABEL = {
     supervisor: 'SPV',
     manager: 'Dept Manager',
-    finance_manager: 'Finance Manager',
   }
 
   const ACTION_META = {
@@ -877,7 +861,6 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
         if (!row) return ''
         const next = nextApprovalRole(row.required_role, row.profiles?.role, row.total_amount)
         if (next === 'manager') return 'Nominal ≥ Rp5jt — setelah Anda setujui, pengajuan diteruskan ke Manager Departemen.'
-        if (next === 'finance_manager') return 'Setelah Anda setujui, pengajuan diteruskan ke Finance Manager.'
         return 'Setelah Anda setujui, pengajuan akan masuk ke Finance Verification Process.'
       },
     },
@@ -885,8 +868,8 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
     revision: { label: 'Kembalikan untuk Revisi', color: '#b35900', icon: '↩', desc: () => 'Pengajuan dikembalikan ke employee untuk diperbaiki.' },
   }
 
-  const queueLabel = canSeeAll
-    ? 'Semua Departemen'
+  const queueLabel = isAdmin
+    ? 'Semua Departemen (Admin)'
     : `Dept. ${profile.department} — Level: ${profile.role}`
 
   return (
@@ -1405,20 +1388,17 @@ function Dashboard({ refreshKey, profile }) {
     const submitterRole  = r.profiles?.role
     const supervisorRow  = hist.find((h) => h.action === 'approved' && h.profiles?.role === 'supervisor')
     const managerRow     = hist.find((h) => h.action === 'approved' && h.profiles?.role === 'manager')
-    const financeMgrRow  = hist.find((h) => h.action === 'approved' && h.profiles?.role === 'finance_manager')
     const verifierRow    = hist.find((h) => h.action === 'verified')
-    const skipDeptStages = ['manager', 'finance_manager', 'admin'].includes(submitterRole)
+    const skipDeptStages = SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)
     const needsManager   = !skipDeptStages && Number(r.total_amount) >= 5000000
 
     const supervisorName  = supervisorRow?.profiles?.full_name  || null
     const managerName     = managerRow?.profiles?.full_name     || null
-    const financeMgrName  = financeMgrRow?.profiles?.full_name  || null
     const verifierName    = verifierRow?.profiles?.full_name    || null
 
     const employeeSig     = r.profiles?.signature_url           || null
     const supervisorSig   = supervisorRow?.profiles?.signature_url || null
     const managerSig      = managerRow?.profiles?.signature_url    || null
-    const financeMgrSig   = financeMgrRow?.profiles?.signature_url || null
     const verifierSig     = verifierRow?.profiles?.signature_url   || null
 
     const itemRows = (items || []).map((it, i) => `
@@ -1446,8 +1426,7 @@ function Dashboard({ refreshKey, profile }) {
       signBox('Pembuat Pengajuan', 'Employee', employeeName, employeeSig),
       ...(skipDeptStages ? [] : [signBox('Menyetujui Tahap 1', 'Supervisor', supervisorName, supervisorSig)]),
       ...(needsManager ? [signBox('Menyetujui Tahap 2', 'Manager', managerName, managerSig)] : []),
-      signBox(skipDeptStages ? 'Menyetujui' : 'Menyetujui Tahap ' + (needsManager ? 3 : 2), 'Finance Manager', financeMgrName, financeMgrSig),
-      signBox('Verifikasi Finance', 'Finance Staff/Manager', verifierName, verifierSig),
+      signBox('Verifikasi Finance', 'Finance', verifierName, verifierSig),
     ].join('')
 
     const printDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -1604,7 +1583,7 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
     w.document.close()
   }
 
-  const isFinanceOrAdmin = ['finance_staff', 'finance_manager', 'admin'].includes(profile.role)
+  const isFinanceOrAdmin = isFinanceUser(profile)
 
   useEffect(() => {
     async function load() {
@@ -1949,8 +1928,8 @@ export default function App() {
     </div>
   )
 
-  const isApprover = ['supervisor', 'manager', 'finance_manager', 'admin'].includes(profile.role)
-  const isFinance  = ['finance_staff', 'finance_manager', 'admin'].includes(profile.role)
+  const isApprover = ['supervisor', 'manager', 'admin'].includes(profile.role)
+  const isFinance  = isFinanceUser(profile)
 
   function navigate(key) {
     setTab(key)
@@ -1968,8 +1947,7 @@ export default function App() {
   ].filter((n) => n.show)
 
   const roleColors = {
-    employee: '#6fd6c8', supervisor: '#f6c90e', manager: '#f6a40e',
-    finance_staff: '#74b9ff', finance_manager: '#a29bfe', admin: '#fd79a8',
+    employee: '#6fd6c8', supervisor: '#f6c90e', manager: '#f6a40e', admin: '#fd79a8',
   }
   const roleColor = roleColors[profile.role] || '#ccc'
 
