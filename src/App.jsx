@@ -1908,14 +1908,29 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
     return r.status === 'verified' && (isFinanceOrAdmin || r.profiles?.department === profile.department)
   }
   const printableRows = filtered.filter(canPrintRow)
-  const allPrintSelected = printableRows.length > 0 && selectedPrintIds.length === printableRows.length
-  const somePrintSelected = selectedPrintIds.length > 0 && selectedPrintIds.length < printableRows.length
+  // Checkbox "select all" di header hanya berlaku untuk baris yang tampil di
+  // halaman aktif (pageRows), bukan seluruh data hasil filter — supaya tidak
+  // ikut mencentang baris di halaman lain yang belum pernah dilihat/dicek user.
+  // Seleksi tetap "diingat" lintas halaman lewat selectedPrintIds, jadi user
+  // masih bisa pindah halaman dan menambah pilihan sebelum bulk print.
+  const pagePrintableRows = pageRows.filter(canPrintRow)
+  const allPrintSelected = pagePrintableRows.length > 0 && pagePrintableRows.every((r) => selectedPrintIds.includes(r.id))
+  const somePrintSelected = pagePrintableRows.some((r) => selectedPrintIds.includes(r.id)) && !allPrintSelected
 
   function togglePrintOne(id) {
     setSelectedPrintIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
   }
   function togglePrintAll() {
-    setSelectedPrintIds(allPrintSelected ? [] : printableRows.map((r) => r.id))
+    const pageIds = pagePrintableRows.map((r) => r.id)
+    setSelectedPrintIds((prev) => {
+      if (allPrintSelected) {
+        // Hapus hanya id yang ada di halaman ini, sisakan seleksi di halaman lain
+        return prev.filter((id) => !pageIds.includes(id))
+      }
+      // Tambahkan id halaman ini ke seleksi yang sudah ada (tanpa duplikat)
+      const merged = new Set([...prev, ...pageIds])
+      return Array.from(merged)
+    })
   }
   async function handleBulkPrint(savePdf) {
     const rows = filtered.filter((r) => selectedPrintIds.includes(r.id))
@@ -2038,14 +2053,14 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
             <thead>
               <tr>
                 <th style={{ width: 36 }}>
-                  {printableRows.length > 0 && (
+                  {pagePrintableRows.length > 0 && (
                     <input
                       type="checkbox"
                       style={{ width: 15, height: 15, cursor: 'pointer' }}
                       checked={allPrintSelected}
                       ref={(el) => { if (el) el.indeterminate = somePrintSelected }}
                       onChange={togglePrintAll}
-                      title="Pilih semua dokumen yang bisa diprint"
+                      title="Pilih semua dokumen yang bisa diprint di halaman ini"
                     />
                   )}
                 </th>
