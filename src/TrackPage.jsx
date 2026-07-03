@@ -11,6 +11,23 @@ const STATUS_LABEL = {
   revision: 'Perlu Revisi',
 }
 
+const APPROVER_ROLE_LABEL = {
+  supervisor: 'SPV Departemen',
+  manager: 'Manager Departemen',
+  finance_manager: 'Finance Manager',
+}
+
+// Kalau RPC tracking mengembalikan kolom required_role, tampilkan menunggu
+// approval dari siapa secara spesifik. Kalau tidak ada, fallback ke label umum.
+function statusLabelFor(row) {
+  if (!row) return ''
+  if (row.status === 'submitted' && row.required_role) {
+    const approverLabel = APPROVER_ROLE_LABEL[row.required_role] || row.required_role
+    return `Menunggu Approval ${approverLabel}`
+  }
+  return STATUS_LABEL[row.status] || row.status
+}
+
 function rupiah(n) {
   return 'Rp ' + Number(n || 0).toLocaleString('id-ID')
 }
@@ -80,7 +97,7 @@ export default function TrackPage({ requestNo }) {
             <div className="track-row"><span>Total</span><strong>{rupiah(data.total_amount)}</strong></div>
             <div className="track-row">
               <span>Status</span>
-              <span className={`badge badge-${data.status}`}>{STATUS_LABEL[data.status] || data.status}</span>
+              <span className={`badge badge-${data.status}`}>{statusLabelFor(data)}</span>
             </div>
 
             <div style={{ marginTop: 16 }}>
