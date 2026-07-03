@@ -1592,6 +1592,7 @@ function Dashboard({ refreshKey, profile }) {
   const [search, setSearch] = useState('')
   const [selectedPrintIds, setSelectedPrintIds] = useState([])
   const [bulkPrinting, setBulkPrinting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
@@ -1902,26 +1903,27 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
   const verifiedCount = filtered.filter((r) => r.status === 'verified').length
   const rejectedCount = filtered.filter((r) => r.status === 'rejected').length
 
-  // Pengajuan yang boleh di-print: sudah verified, dan user satu departemen
-  // dengan pengaju (atau finance/admin yang bisa lintas departemen)
+  // Print Slip HANYA boleh untuk pengajuan yang sudah verified, dan user satu
+  // departemen dengan pengaju (atau finance/admin yang bisa lintas departemen).
+  // Checkbox seleksi sendiri sekarang tersedia untuk SEMUA baris apapun
+  // statusnya (dipakai untuk Export Excel) — canPrintRow hanya menyaring baris
+  // mana yang benar-benar akan dicetak saat tombol "Print Slip" bulk ditekan.
   function canPrintRow(r) {
     return r.status === 'verified' && (isFinanceOrAdmin || r.profiles?.department === profile.department)
   }
-  const printableRows = filtered.filter(canPrintRow)
   // Checkbox "select all" di header hanya berlaku untuk baris yang tampil di
   // halaman aktif (pageRows), bukan seluruh data hasil filter — supaya tidak
   // ikut mencentang baris di halaman lain yang belum pernah dilihat/dicek user.
   // Seleksi tetap "diingat" lintas halaman lewat selectedPrintIds, jadi user
-  // masih bisa pindah halaman dan menambah pilihan sebelum bulk print.
-  const pagePrintableRows = pageRows.filter(canPrintRow)
-  const allPrintSelected = pagePrintableRows.length > 0 && pagePrintableRows.every((r) => selectedPrintIds.includes(r.id))
-  const somePrintSelected = pagePrintableRows.some((r) => selectedPrintIds.includes(r.id)) && !allPrintSelected
+  // masih bisa pindah halaman dan menambah pilihan sebelum export/print.
+  const allPrintSelected = pageRows.length > 0 && pageRows.every((r) => selectedPrintIds.includes(r.id))
+  const somePrintSelected = pageRows.some((r) => selectedPrintIds.includes(r.id)) && !allPrintSelected
 
   function togglePrintOne(id) {
     setSelectedPrintIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
   }
   function togglePrintAll() {
-    const pageIds = pagePrintableRows.map((r) => r.id)
+    const pageIds = pageRows.map((r) => r.id)
     setSelectedPrintIds((prev) => {
       if (allPrintSelected) {
         // Hapus hanya id yang ada di halaman ini, sisakan seleksi di halaman lain
@@ -1932,12 +1934,137 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
       return Array.from(merged)
     })
   }
+
+  // Semua baris yang tercentang (berapa pun statusnya) — dasar untuk Export Excel.
+  const selectedRows = filtered.filter((r) => selectedPrintIds.includes(r.id))
+  // Dari yang tercentang, hanya yang berstatus verified yang boleh di-print.
+  const selectedPrintableRows = selectedRows.filter(canPrintRow)
+  const selectedIgnoredCount = selectedRows.length - selectedPrintableRows.length
+
+  // Print Slip (bulk): baris tercentang yang BUKAN verified otomatis diabaikan,
+  // tidak akan ikut ke-print sama sekali.
   async function handleBulkPrint(savePdf) {
-    const rows = filtered.filter((r) => selectedPrintIds.includes(r.id))
+    const rows = selectedPrintableRows
     if (rows.length === 0) return
     setBulkPrinting(true)
     await printBulkSlips(rows, savePdf)
     setBulkPrinting(false)
+  }
+
+  // Export Excel: mengambil SEMUA baris tercentang apapun statusnya, dan
+  // menyusunnya menjadi ringkasan .xlsx yang rapi (header berwarna, format
+  // Rupiah, total, dan ringkasan per-status) lalu langsung mengunduhnya.
+  async function handleExportExcel() {
+    const rows = selectedRows
+    if (rows.length === 0) return
+    setExporting(true)
+    try {
+      const { default: ExcelJS } = await import('exceljs')
+      const wb = new ExcelJS.Workbook()
+      wb.creator = 'PCRS App'
+      wb.created = new Date()
+
+      const ws = wb.addWorksheet('Summary Reimbursement', {
+        views: [{ state: 'frozen', ySplit: 4, showGridLines: false }],
+      })
+
+      ws.columns = [
+        { width: 5 }, { width: 16 }, { width: 13 }, { width: 24 },
+        { width: 16 }, { width: 24 }, { width: 18 }, { width: 30 },
+      ]
+
+      ws.mergeCells('A1:H1')
+      const titleCell = ws.getCell('A1')
+      titleCell.value = 'Summary Reimbursement'
+      titleCell.font = { size: 16, bold: true, color: { argb: 'FF14213D' } }
+
+      ws.mergeCells('A2:H2')
+      const subCell = ws.getCell('A2')
+      subCell.value = `Diekspor: ${new Date().toLocaleString('id-ID')}   |   Total data terpilih: ${rows.length}`
+      subCell.font = { size: 10, italic: true, color: { argb: 'FF666666' } }
+
+      const headers = ['No', 'No. Request', 'Tanggal', 'Employee', 'Department', 'Kategori', 'Total (Rp)', 'Status']
+      const headerRow = ws.getRow(4)
+      headers.forEach((h, i) => {
+        const cell = headerRow.getCell(i + 1)
+        cell.value = h
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF14213D' } }
+        cell.alignment = { horizontal: 'center', vertical: 'middle' }
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFCCCCCC' } }, bottom: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+          left: { style: 'thin', color: { argb: 'FFCCCCCC' } }, right: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+        }
+      })
+      headerRow.height = 22
+
+      rows.forEach((r, idx) => {
+        const row = ws.getRow(5 + idx)
+        const cats = [...new Set((r.reimbursement_items || []).map((it) => it.category))].join(', ') || '—'
+        row.getCell(1).value = idx + 1
+        row.getCell(2).value = r.request_no
+        row.getCell(3).value = r.request_date
+        row.getCell(4).value = r.profiles?.full_name || '—'
+        row.getCell(5).value = r.profiles?.department || '—'
+        row.getCell(6).value = cats
+        row.getCell(7).value = Number(r.total_amount) || 0
+        row.getCell(7).numFmt = '"Rp" #,##0'
+        row.getCell(8).value = STATUS_LABEL[r.status] || r.status
+
+        const isEven = idx % 2 === 0
+        for (let c = 1; c <= 8; c++) {
+          const cell = row.getCell(c)
+          cell.alignment = { vertical: 'middle', horizontal: c === 1 ? 'center' : c === 7 ? 'right' : 'left' }
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE5E5E5' } }, bottom: { style: 'thin', color: { argb: 'FFE5E5E5' } },
+            left: { style: 'thin', color: { argb: 'FFE5E5E5' } }, right: { style: 'thin', color: { argb: 'FFE5E5E5' } },
+          }
+          if (isEven) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7F8FA' } }
+        }
+      })
+
+      const totalRowIdx = 5 + rows.length
+      const totalRow = ws.getRow(totalRowIdx)
+      ws.mergeCells(`A${totalRowIdx}:F${totalRowIdx}`)
+      totalRow.getCell(1).value = 'Total Nominal Terpilih'
+      totalRow.getCell(1).font = { bold: true }
+      totalRow.getCell(1).alignment = { horizontal: 'right' }
+      const grandTotal = rows.reduce((s, r) => s + Number(r.total_amount || 0), 0)
+      totalRow.getCell(7).value = grandTotal
+      totalRow.getCell(7).numFmt = '"Rp" #,##0'
+      totalRow.getCell(7).font = { bold: true }
+      for (let c = 1; c <= 8; c++) {
+        totalRow.getCell(c).border = { top: { style: 'double', color: { argb: 'FF14213D' } } }
+      }
+
+      const statusCounts = {}
+      rows.forEach((r) => { statusCounts[r.status] = (statusCounts[r.status] || 0) + 1 })
+      let sIdx = totalRowIdx + 2
+      ws.getCell(`A${sIdx}`).value = 'Ringkasan per Status'
+      ws.getCell(`A${sIdx}`).font = { bold: true, color: { argb: 'FF14213D' } }
+      sIdx++
+      Object.entries(statusCounts).forEach(([status, count]) => {
+        ws.getCell(`A${sIdx}`).value = STATUS_LABEL[status] || status
+        ws.getCell(`B${sIdx}`).value = count
+        sIdx++
+      })
+
+      const buffer = await wb.xlsx.writeBuffer()
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Summary_Reimbursement_${new Date().toISOString().slice(0, 10)}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error(err)
+      alert('Gagal membuat file Excel. Silakan coba lagi.')
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -2030,19 +2157,35 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
           ({filtered.length} dari {all.length} total)
         </h3>
 
-        {/* Bulk print bar — muncul saat ada pengajuan verified yang dipilih */}
+        {/* Bulk action bar — muncul saat ada baris (status apa pun) yang dicentang */}
         {selectedPrintIds.length > 0 && (
           <div className="bulk-bar">
-            <span className="bulk-count">{selectedPrintIds.length} dokumen dipilih</span>
+            <span className="bulk-count">{selectedPrintIds.length} baris dipilih</span>
             <div className="bulk-actions">
-              <button className="btn btn-sm" style={{ background: '#14213d', color: '#fff' }} disabled={bulkPrinting} onClick={() => handleBulkPrint(false)}>
-                {bulkPrinting ? <><span className="spinner" />Menyiapkan...</> : '🖨 Print Semua'}
+              <button
+                className="btn btn-sm"
+                style={{ background: '#14213d', color: '#fff' }}
+                disabled={bulkPrinting || selectedPrintableRows.length === 0}
+                onClick={() => handleBulkPrint(false)}
+                title={selectedPrintableRows.length === 0 ? 'Tidak ada dokumen berstatus Terverifikasi pada seleksi ini' : ''}
+              >
+                {bulkPrinting ? <><span className="spinner" />Menyiapkan...</> : `🖨 Print Slip (${selectedPrintableRows.length})`}
               </button>
-              <button className="btn btn-sm" style={{ background: '#14213d', color: '#fff' }} disabled={bulkPrinting} onClick={() => handleBulkPrint(true)}>
-                {bulkPrinting ? <><span className="spinner" />Menyiapkan...</> : '📥 Simpan PDF Semua'}
+              <button
+                className="btn btn-sm"
+                style={{ background: '#0f6e6e', color: '#fff' }}
+                disabled={exporting}
+                onClick={handleExportExcel}
+              >
+                {exporting ? <><span className="spinner" />Menyiapkan...</> : '📊 Export Excel'}
               </button>
               <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} onClick={() => setSelectedPrintIds([])}>Batal Pilih</button>
             </div>
+            {selectedIgnoredCount > 0 && (
+              <div style={{ flexBasis: '100%', fontSize: 12, color: '#ffe9b3' }}>
+                ⚠ {selectedIgnoredCount} baris terpilih belum berstatus <strong>Terverifikasi</strong> — akan diabaikan saat Print Slip (tetap ikut di Export Excel).
+              </div>
+            )}
           </div>
         )}
 
@@ -2053,14 +2196,14 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
             <thead>
               <tr>
                 <th style={{ width: 36 }}>
-                  {pagePrintableRows.length > 0 && (
+                  {pageRows.length > 0 && (
                     <input
                       type="checkbox"
                       style={{ width: 15, height: 15, cursor: 'pointer' }}
                       checked={allPrintSelected}
                       ref={(el) => { if (el) el.indeterminate = somePrintSelected }}
                       onChange={togglePrintAll}
-                      title="Pilih semua dokumen yang bisa diprint di halaman ini"
+                      title="Pilih semua baris di halaman ini"
                     />
                   )}
                 </th>
@@ -2071,14 +2214,12 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
               {pageRows.map((r) => (
                 <tr key={r.id} className={selectedPrintIds.includes(r.id) ? 'row-selected' : ''}>
                   <td>
-                    {canPrintRow(r) && (
-                      <input
-                        type="checkbox"
-                        style={{ width: 15, height: 15, cursor: 'pointer' }}
-                        checked={selectedPrintIds.includes(r.id)}
-                        onChange={() => togglePrintOne(r.id)}
-                      />
-                    )}
+                    <input
+                      type="checkbox"
+                      style={{ width: 15, height: 15, cursor: 'pointer' }}
+                      checked={selectedPrintIds.includes(r.id)}
+                      onChange={() => togglePrintOne(r.id)}
+                    />
                   </td>
                   <td>{r.request_no}</td>
                   <td>{r.request_date}</td>
