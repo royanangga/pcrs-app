@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 import { AuthScreen } from './App.jsx'
+import { printSlipByRequestNo } from './slip.js'
 
 const STATUS_LABEL = {
   draft: 'Draft',
@@ -38,6 +39,8 @@ export default function TrackPage({ requestNo }) {
   const [attachments, setAttachments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [printing, setPrinting] = useState(false)
+  const [printError, setPrintError] = useState('')
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -72,6 +75,20 @@ export default function TrackPage({ requestNo }) {
     return /\.(jpe?g|png|gif|webp)$/i.test(name)
   }
 
+  // Print ulang slip — hanya masuk akal untuk pengajuan yang sudah verified
+  // (sudah dicairkan), sama seperti aturan print slip di Dashboard.
+  async function handlePrint() {
+    setPrintError('')
+    setPrinting(true)
+    try {
+      await printSlipByRequestNo(supabase, requestNo, false)
+    } catch (e) {
+      setPrintError('Gagal menyiapkan slip untuk dicetak. Silakan coba lagi.')
+    } finally {
+      setPrinting(false)
+    }
+  }
+
   if (session === undefined) {
     return <div className="container">Memuat...</div>
   }
@@ -99,6 +116,20 @@ export default function TrackPage({ requestNo }) {
               <span>Status</span>
               <span className={`badge badge-${data.status}`}>{statusLabelFor(data)}</span>
             </div>
+
+            {data.status === 'verified' && (
+              <div style={{ marginTop: 12 }}>
+                <button
+                  className="btn btn-sm"
+                  style={{ background: '#14213d', color: '#fff', width: '100%' }}
+                  disabled={printing}
+                  onClick={handlePrint}
+                >
+                  {printing ? 'Menyiapkan...' : '🖨 Print Ulang Slip'}
+                </button>
+                {printError && <div className="error-text" style={{ marginTop: 6 }}>{printError}</div>}
+              </div>
+            )}
 
             <div style={{ marginTop: 16 }}>
               <strong style={{ fontSize: 13 }}>Bukti Transaksi</strong>
