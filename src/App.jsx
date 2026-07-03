@@ -18,8 +18,12 @@ const STATUS_LABEL = {
 const MANAGER_THRESHOLD = 5000000
 
 // Role yang levelnya setara/di atas Manager Departemen: pengajuan mereka
-// langsung masuk ke tahap approval Finance Manager (skip SPV & Dept Manager)
-const SKIP_DEPT_APPROVAL_ROLES = ['manager', 'finance_manager', 'admin']
+// langsung masuk ke tahap approval Finance Manager (skip SPV & Dept Manager).
+// PENTING: 'finance_manager' TIDAK dimasukkan ke sini — kalau Finance Manager
+// mengajukan reimbursement untuk dirinya sendiri, pengajuan tetap harus lewat
+// SPV/Manager departemen dulu (pimpinan departemen), baru bisa di-approve oleh
+// Finance Manager. Ini mencegah Finance Manager approve pengajuannya sendiri.
+const SKIP_DEPT_APPROVAL_ROLES = ['manager', 'admin']
 
 // Menentukan approver pertama yang dituju berdasarkan role pengaju & nominal,
 // sesuai Tabel Workflow (SAP B1 / Power Apps / Excel Logic):
@@ -682,9 +686,39 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
 
       // Filter tambahan di client: SPV & Dept Manager hanya melihat departemen sendiri.
       // Finance Manager & Admin melihat lintas departemen.
-      const filtered = canSeeAll
+      let filtered = canSeeAll
         ? (data || [])
         : (data || []).filter((r) => r.profiles?.department === profile.department)
+
+      // Guard tambahan: Finance Manager hanya boleh approve pengajuan yang
+      // SUDAH disetujui oleh pimpinan departemen (SPV/Manager). Ini mencegah
+      // Finance Manager approve pengajuan yang belum lewat approval departemen
+      // (termasuk mencegah self-approval atas pengajuannya sendiri).
+      // Pengecualian: pengajuan dari Manager/Admin memang sengaja skip SPV &
+      // Dept Manager sesuai alur workflow, jadi tidak perlu riwayat approval dept.
+      if (profile.role === 'finance_manager' && filtered.length > 0) {
+        const needsCheck = filtered.filter((r) => !SKIP_DEPT_APPROVAL_ROLES.includes(r.profiles?.role))
+        const ids = needsCheck.map((r) => r.id)
+
+        let approvedByDeptHead = new Set()
+        if (ids.length > 0) {
+          const { data: hist } = await supabase
+            .from('approval_history')
+            .select('reimbursement_id, action, profiles(role)')
+            .in('reimbursement_id', ids)
+            .eq('action', 'approved')
+
+          approvedByDeptHead = new Set(
+            (hist || [])
+              .filter((h) => ['supervisor', 'manager'].includes(h.profiles?.role))
+              .map((h) => h.reimbursement_id)
+          )
+        }
+
+        filtered = filtered.filter((r) =>
+          SKIP_DEPT_APPROVAL_ROLES.includes(r.profiles?.role) || approvedByDeptHead.has(r.id)
+        )
+      }
 
       setRows(filtered)
 
