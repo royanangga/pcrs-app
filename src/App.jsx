@@ -21,7 +21,9 @@ const FINANCE_DEPARTMENT = 'Finance'
 // User dianggap "Finance" (boleh lihat semua pengajuan lintas departemen &
 // melakukan Finance Verification) kalau department-nya Finance — TIDAK PEDULI
 // role-nya (Employee/Supervisor/Manager di department Finance semua berlaku
-// sama seperti finance staff). Admin juga selalu dianggap Finance.
+// sama, bisa melihat & melakukan verifikasi). Admin juga selalu dianggap Finance.
+// "Finance Manager" di sini bukan role tersendiri — cukup user dengan
+// department = Finance (role apa pun), sesuai struktur organisasi yang ada.
 function isFinanceUser(profile) {
   if (!profile) return false
   if (profile.role === 'admin') return true
@@ -46,21 +48,32 @@ function statusLabelFor(row) {
 }
 
 // Batas nominal yang mewajibkan approval tambahan dari Manager Departemen
+// (hanya berlaku untuk pengaju Employee — lihat requiredRoleFor)
 const MANAGER_THRESHOLD = 5000000
 
-// Role yang levelnya setara/di atas Manager Departemen: pengajuan mereka tidak
-// punya atasan lagi di departemennya sendiri, jadi langsung lanjut ke Finance
-// Verification tanpa approval departemen. Berlaku SAMA untuk semua departemen
-// termasuk department Finance sendiri (Manager Finance yang mengajukan juga
-// langsung ke Finance Verification, tidak perlu approval SPV).
+// Role yang tidak punya atasan lagi di departemennya sendiri (level Manager ke
+// atas): pengajuan mereka langsung lanjut ke Finance Verification tanpa
+// approval departemen sama sekali. Berlaku sama untuk semua departemen,
+// termasuk department Finance sendiri (Manager di department Finance yang
+// mengajukan juga langsung ke Finance Verification tanpa approval SPV).
 const SKIP_DEPT_APPROVAL_ROLES = ['manager', 'admin']
+
+// Role yang approval-diri-sendiri di-skip, langsung ke atasan terkait (bukan
+// dihilangkan sepenuhnya seperti Manager/Admin di atas). Saat ini hanya
+// Supervisor: seorang Supervisor yang mengajukan reimbursement tidak perlu
+// (dan tidak boleh) di-approve oleh sesama Supervisor, jadi langsung
+// diteruskan ke Manager Departemen (atasannya).
+const SELF_SKIP_TO_MANAGER_ROLES = ['supervisor']
 
 // Menentukan status awal & tahap approval pertama saat pengajuan dibuat/disubmit ulang:
 //  - Pengaju = Manager/Admin (semua nominal) -> tidak ada approval departemen,
 //    status langsung 'approved' (siap Finance Verification)
-//  - Pengaju = Employee/Supervisor -> mulai dari approval Supervisor (status 'submitted')
+//  - Pengaju = Supervisor -> approval diri sendiri di-skip, langsung ke Manager
+//    Departemen (status 'submitted', required_role = 'manager')
+//  - Pengaju = Employee -> mulai dari approval Supervisor (status 'submitted')
 function requiredRoleFor(submitterRole) {
   if (SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)) return 'manager' // placeholder, tak dipakai (status langsung 'approved')
+  if (SELF_SKIP_TO_MANAGER_ROLES.includes(submitterRole)) return 'manager'
   return 'supervisor'
 }
 
@@ -72,6 +85,11 @@ function initialStatusFor(submitterRole) {
 // currentRole = required_role saat ini (tahap yang baru saja approve)
 // Return null artinya tidak ada approval lagi -> lanjut ke Finance Verification (status = 'approved')
 function nextApprovalRole(currentRole, submitterRole, total) {
+  // Kalau pengaju adalah Supervisor, tahap 'manager' ini menggantikan approval
+  // dirinya sendiri (atasan terkait) -> setelah Manager approve, selesai,
+  // TIDAK tergantung nominal.
+  if (SELF_SKIP_TO_MANAGER_ROLES.includes(submitterRole)) return null
+
   const needsDeptManager = Number(total) >= MANAGER_THRESHOLD && !SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)
   if (currentRole === 'supervisor') {
     return needsDeptManager ? 'manager' : null
@@ -82,6 +100,7 @@ function nextApprovalRole(currentRole, submitterRole, total) {
 
 function approvalFlowLabel(submitterRole, total) {
   if (SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)) return 'Langsung ke Finance Verification (tanpa approval departemen)'
+  if (SELF_SKIP_TO_MANAGER_ROLES.includes(submitterRole)) return 'Manager Departemen → Finance Verification (approval SPV di-skip karena pengaju adalah SPV)'
   if (Number(total) >= MANAGER_THRESHOLD) return 'Supervisor → Manager → Finance Verification (nominal ≥ Rp5jt)'
   return 'Supervisor → Finance Verification'
 }
