@@ -483,6 +483,9 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
   const [editFiles, setEditFiles] = useState([])
   const [saving, setSaving]       = useState(false)
   const [msg, setMsg]             = useState('')
+  const [search, setSearch]       = useState('')
+  const [page, setPage]           = useState(1)
+  const [pageSize, setPageSize]   = useState(10)
 
   const load = useCallback(async () => {
     setLoadingData(true)
@@ -591,19 +594,56 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
 
   const editTotal = editItems.reduce((s, it) => s + (Number(it.amount) || 0), 0)
 
+  const filtered = rows.filter((r) => {
+    if (!search.trim()) return true
+    const q = search.trim().toLowerCase()
+    const matchNo     = r.request_no?.toLowerCase().includes(q)
+    const matchDate   = r.request_date?.includes(q)
+    const matchStatus = statusLabelFor(r)?.toLowerCase().includes(q)
+    const matchAmt    = String(r.total_amount).includes(q)
+    return matchNo || matchDate || matchStatus || matchAmt
+  })
+
+  useEffect(() => { setPage(1) }, [search])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
+
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, page, pageSize])
+
   return (
     <div className="card">
-      <h3>Pengajuan Saya</h3>
+      <h3>Pengajuan Saya ({filtered.length}{filtered.length !== rows.length ? ` dari ${rows.length}` : ''})</h3>
+
+      <div className="myreq-search">
+        <input
+          type="text"
+          placeholder="🔍 Cari no. request, tanggal, status, atau nominal..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {search && (
+          <button type="button" className="btn btn-sm" style={{ background: '#eee', color: '#555' }} onClick={() => setSearch('')}>
+            ✕ Bersihkan
+          </button>
+        )}
+      </div>
+
       {msg && <div className="error-text" style={{ color: 'var(--danger)', marginBottom: 10 }}>{msg}</div>}
       {loadingData ? <SkeletonTable cols={5} rows={4} /> : rows.length === 0 ? (
         <div className="empty-state">Belum ada pengajuan.</div>
+      ) : filtered.length === 0 ? (
+        <div className="empty-state">Tidak ada pengajuan yang cocok dengan pencarian "{search}".</div>
       ) : (
         <table>
           <thead>
             <tr><th>No. Request</th><th>Tanggal</th><th>Total</th><th>Status</th><th></th></tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {pageRows.map((r) => (
               <React.Fragment key={r.id}>
                 <tr className={editId === r.id ? 'row-selected' : ''}>
                   <td>{r.request_no}</td>
@@ -720,6 +760,10 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
             ))}
           </tbody>
         </table>
+      )}
+
+      {!loadingData && filtered.length > 0 && (
+        <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={filtered.length} />
       )}
     </div>
   )

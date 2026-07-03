@@ -586,6 +586,26 @@ td input[type="checkbox"], th input[type="checkbox"] {
 .pagination-nav .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .pagination-page { font-size: 12px; font-weight: 600; color: var(--navy); padding: 0 6px; white-space: nowrap; }
 
+/* ---- Search box: Pengajuan Saya ---- */
+.myreq-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.myreq-search input {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  font-family: inherit;
+}
+.myreq-search input:focus {
+  outline: none;
+  border-color: var(--teal);
+}
+
 @media (max-width: 640px) {
   .pagination-bar { flex-direction: column; align-items: flex-start; }
   .bulk-bar { flex-direction: column; align-items: stretch; }
