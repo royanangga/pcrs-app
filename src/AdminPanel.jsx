@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { supabase } from './supabaseClient'
 
-const ROLES = ['employee', 'supervisor', 'manager', 'finance_staff', 'finance_manager', 'admin']
+const ROLES = ['employee', 'supervisor', 'manager', 'admin']
 
 const STATUS_OPTIONS = ['draft', 'submitted', 'approved', 'verified', 'rejected', 'revision']
 
