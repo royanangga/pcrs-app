@@ -1565,7 +1565,7 @@ function Dashboard({ refreshKey, profile }) {
                   <td>{rupiah(r.total_amount)}</td>
                   <td><span className={`badge badge-${r.status}`}>{statusLabelFor(r)}</span></td>
                   <td>
-                    {r.status === 'verified' && (r.employee_id === profile.id || ['finance_staff', 'finance_manager', 'admin'].includes(profile.role)) && (
+                    {r.status === 'verified' && (isFinanceOrAdmin || r.profiles?.department === profile.department) && (
                       <div style={{ position: 'relative' }}>
                         <button
                           className="btn btn-sm"
