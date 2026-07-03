@@ -1190,6 +1190,8 @@ function Dashboard({ refreshKey, profile }) {
   const [search, setSearch] = useState('')
   const [qrModal, setQrModal] = useState(null)
   const [docMenu, setDocMenu] = useState(null)
+  const [selectedPrintIds, setSelectedPrintIds] = useState([])
+  const [bulkPrinting, setBulkPrinting] = useState(false)
 
   useEffect(() => {
     const close = () => setDocMenu(null)
@@ -1197,7 +1199,7 @@ function Dashboard({ refreshKey, profile }) {
     return () => document.removeEventListener('click', close)
   }, []) // row.id yang menu-nya terbuka
 
-  async function printSlip(r, savePdf = false) {
+  async function fetchSlipParts(r) {
     const { data: items } = await supabase
       .from('reimbursement_items').select('*')
       .eq('reimbursement_id', r.id).order('expense_date')
@@ -1207,6 +1209,10 @@ function Dashboard({ refreshKey, profile }) {
       .eq('reimbursement_id', r.id).order('created_at')
 
     const qrDataUrl = await QRCode.toDataURL(trackUrl(r.request_no), { width: 110, margin: 1 })
+    return { items: items || [], history: history || [], qrDataUrl }
+  }
+
+  function buildSlipBody(r, items, history, qrDataUrl) {
     const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
 
     // Ekstrak nama dari history berdasarkan role & urutan
@@ -1254,58 +1260,7 @@ function Dashboard({ refreshKey, profile }) {
 
     const printDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
 
-    const html = `<!DOCTYPE html>
-<html lang="id"><head>
-<meta charset="UTF-8"/>
-<title>Slip Reimbursement ${r.request_no}</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 28px 32px; }
-
-  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-  .brand { font-size: 20px; font-weight: 900; color: #14213d; }
-  .brand span { color: #0f6e6e; }
-  .doc-label { text-align: right; }
-  .doc-label .title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #14213d; }
-  .doc-label .no { font-size: 15px; font-weight: 900; color: #0f6e6e; }
-  hr.thick { border: none; border-top: 2.5px solid #14213d; margin: 10px 0; }
-  hr.thin  { border: none; border-top: 1px solid #ccc; margin: 10px 0; }
-
-  .sah { display: inline-block; border: 2.5px solid #1f8a4c; color: #1f8a4c; font-size: 13px;
-    font-weight: 900; padding: 3px 14px; border-radius: 4px; letter-spacing: 2px;
-    transform: rotate(-4deg); float: right; margin-top: -4px; }
-
-  .info-row { display: flex; gap: 0; margin: 8px 0 12px; }
-  .info-col { flex: 1; }
-  .info-col .lbl { font-size: 10px; color: #666; font-weight: 700; text-transform: uppercase; }
-  .info-col .val { font-size: 12px; font-weight: 600; margin-top: 1px; }
-
-  .alur-box { background: #f0faf4; border-left: 3px solid #1f8a4c; padding: 5px 10px;
-    font-size: 11px; color: #14213d; margin-bottom: 10px; border-radius: 0 4px 4px 0; }
-  .alur-box strong { font-weight: 700; }
-
-  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-  thead th { background: #14213d; color: #fff; padding: 6px 8px; font-size: 10px; text-transform: uppercase; text-align: left; }
-  tbody td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; font-size: 11px; }
-  .total-row td { font-weight: 700; font-size: 12px; background: #e6f3f3; border-top: 2px solid #14213d; }
-
-  .bottom { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 20px; padding-top: 14px; border-top: 1px solid #e3e6ea; }
-  .qr-wrap { text-align: center; flex-shrink: 0; }
-  .qr-wrap img { border: 1px solid #ddd; border-radius: 4px; }
-  .qr-wrap p { font-size: 9px; color: #888; margin-top: 3px; }
-
-  .signs { display: flex; gap: 20px; flex-wrap: wrap; justify-content: flex-end; }
-  .sign-box { text-align: center; min-width: 110px; }
-  .sign-space { height: 44px; border-bottom: 1px solid #333; margin-bottom: 5px; position: relative; }
-  .pre-filled { position: absolute; bottom: 4px; left: 0; right: 0; font-size: 10px; font-weight: 700; text-align: center; color: #14213d; }
-  .sign-name { font-size: 10px; font-weight: 700; }
-  .sign-role { font-size: 9px; color: #666; margin-top: 1px; }
-
-  .footer { margin-top: 14px; text-align: center; font-size: 9px; color: #aaa; border-top: 1px dashed #ddd; padding-top: 8px; }
-  @media print { @page { margin: 15mm; } }
-</style>
-</head><body>
-
+    return `
 <div class="header">
   <div>
     <div class="brand">PCRS <span>•</span> Petty Cash</div>
@@ -1327,15 +1282,6 @@ function Dashboard({ refreshKey, profile }) {
     <div class="info-col"><div class="lbl">Tanggal Pengajuan</div><div class="val">${r.request_date}</div></div>
     <div class="info-col"><div class="lbl">Tanggal Cetak</div><div class="val">${printDate}</div></div>
   </div>
-</div>
-
-<div class="alur-box">
-  <strong>Alur Approval:</strong>
-  ${skipDeptStages
-    ? `Employee &rarr; Finance Manager (${financeMgrName || '—'}) &rarr; Finance Verification`
-    : needsManager
-      ? `Employee &rarr; Supervisor (${supervisorName || '—'}) &rarr; Manager (${managerName || '—'}) &rarr; Finance Manager (${financeMgrName || '—'}) &rarr; Finance Verification`
-      : `Employee &rarr; Supervisor (${supervisorName || '—'}) &rarr; Finance Manager (${financeMgrName || '—'}) &rarr; Finance Verification`}
 </div>
 
 <hr class="thin"/>
@@ -1369,9 +1315,66 @@ function Dashboard({ refreshKey, profile }) {
 
 <div class="footer">
   Dicetak otomatis oleh PCRS &nbsp;•&nbsp; ${r.request_no} &nbsp;•&nbsp; ${new Date().toLocaleString('id-ID')}
-</div>
+</div>`
+  }
 
-<div id="save-hint" style="display:none;margin-top:20px;background:#f0faf4;border:1px solid #1f8a4c;border-radius:8px;padding:14px 18px;text-align:center;">
+  // Bungkus 1 atau banyak slip jadi satu dokumen HTML siap print/simpan PDF.
+  // Setiap slip ditaruh di halaman terpisah (page-break-after) supaya rapi saat dicetak sekaligus.
+  function wrapSlipsHtml(bodies, savePdf, docTitle) {
+    return `<!DOCTYPE html>
+<html lang="id"><head>
+<meta charset="UTF-8"/>
+<title>${docTitle}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 12px; color: #111; }
+
+  .slip-page { padding: 28px 32px; page-break-after: always; }
+  .slip-page:last-child { page-break-after: auto; }
+
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .brand { font-size: 20px; font-weight: 900; color: #14213d; }
+  .brand span { color: #0f6e6e; }
+  .doc-label { text-align: right; }
+  .doc-label .title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #14213d; }
+  .doc-label .no { font-size: 15px; font-weight: 900; color: #0f6e6e; }
+  hr.thick { border: none; border-top: 2.5px solid #14213d; margin: 10px 0; }
+  hr.thin  { border: none; border-top: 1px solid #ccc; margin: 10px 0; }
+
+  .sah { display: inline-block; border: 2.5px solid #1f8a4c; color: #1f8a4c; font-size: 13px;
+    font-weight: 900; padding: 3px 14px; border-radius: 4px; letter-spacing: 2px;
+    transform: rotate(-4deg); float: right; margin-top: -4px; }
+
+  .info-row { display: flex; gap: 0; margin: 8px 0 12px; }
+  .info-col { flex: 1; }
+  .info-col .lbl { font-size: 10px; color: #666; font-weight: 700; text-transform: uppercase; }
+  .info-col .val { font-size: 12px; font-weight: 600; margin-top: 1px; }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+  thead th { background: #14213d; color: #fff; padding: 6px 8px; font-size: 10px; text-transform: uppercase; text-align: left; }
+  tbody td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; font-size: 11px; }
+  .total-row td { font-weight: 700; font-size: 12px; background: #e6f3f3; border-top: 2px solid #14213d; }
+
+  .bottom { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 20px; padding-top: 14px; border-top: 1px solid #e3e6ea; }
+  .qr-wrap { text-align: center; flex-shrink: 0; }
+  .qr-wrap img { border: 1px solid #ddd; border-radius: 4px; }
+  .qr-wrap p { font-size: 9px; color: #888; margin-top: 3px; }
+
+  .signs { display: flex; gap: 20px; flex-wrap: wrap; justify-content: flex-end; }
+  .sign-box { text-align: center; min-width: 110px; }
+  .sign-space { height: 44px; border-bottom: 1px solid #333; margin-bottom: 5px; position: relative; }
+  .pre-filled { position: absolute; bottom: 4px; left: 0; right: 0; font-size: 10px; font-weight: 700; text-align: center; color: #14213d; }
+  .sign-name { font-size: 10px; font-weight: 700; }
+  .sign-role { font-size: 9px; color: #666; margin-top: 1px; }
+
+  .footer { margin-top: 14px; text-align: center; font-size: 9px; color: #aaa; border-top: 1px dashed #ddd; padding-top: 8px; }
+  @media print { @page { margin: 15mm; } }
+</style>
+</head><body>
+
+${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
+
+<div id="save-hint" style="display:none;margin:20px 32px;background:#f0faf4;border:1px solid #1f8a4c;border-radius:8px;padding:14px 18px;text-align:center;">
   <div style="font-size:14px;font-weight:700;color:#14213d;margin-bottom:8px">📥 Simpan sebagai PDF</div>
   <div style="font-size:12px;color:#444;margin-bottom:12px">Klik tombol di bawah, lalu pilih <strong>"Save as PDF"</strong> atau <strong>"Microsoft Print to PDF"</strong> sebagai printer.</div>
   <button onclick="window.print()" style="background:#14213d;color:#fff;border:none;border-radius:6px;padding:10px 28px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.3px">
@@ -1388,7 +1391,21 @@ function Dashboard({ refreshKey, profile }) {
   }
 </script>
 </body></html>`
+  }
 
+  async function printSlip(r, savePdf = false) {
+    const { items, history, qrDataUrl } = await fetchSlipParts(r)
+    const body = buildSlipBody(r, items, history, qrDataUrl)
+    const html = wrapSlipsHtml([body], savePdf, `Slip Reimbursement ${r.request_no}`)
+    const w = window.open('', '_blank', 'width=860,height=680')
+    w.document.write(html)
+    w.document.close()
+  }
+
+  async function printBulkSlips(rows, savePdf = false) {
+    const parts = await Promise.all(rows.map(fetchSlipParts))
+    const bodies = rows.map((r, i) => buildSlipBody(r, parts[i].items, parts[i].history, parts[i].qrDataUrl))
+    const html = wrapSlipsHtml(bodies, savePdf, `Slip Reimbursement (${rows.length} dokumen)`)
     const w = window.open('', '_blank', 'width=860,height=680')
     w.document.write(html)
     w.document.close()
@@ -1461,6 +1478,29 @@ function Dashboard({ refreshKey, profile }) {
   const pendingFinance = filtered.filter((r) => r.status === 'approved').length
   const verifiedCount = filtered.filter((r) => r.status === 'verified').length
   const rejectedCount = filtered.filter((r) => r.status === 'rejected').length
+
+  // Pengajuan yang boleh di-print: sudah verified, dan user satu departemen
+  // dengan pengaju (atau finance/admin yang bisa lintas departemen)
+  function canPrintRow(r) {
+    return r.status === 'verified' && (isFinanceOrAdmin || r.profiles?.department === profile.department)
+  }
+  const printableRows = filtered.filter(canPrintRow)
+  const allPrintSelected = printableRows.length > 0 && selectedPrintIds.length === printableRows.length
+  const somePrintSelected = selectedPrintIds.length > 0 && selectedPrintIds.length < printableRows.length
+
+  function togglePrintOne(id) {
+    setSelectedPrintIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
+  }
+  function togglePrintAll() {
+    setSelectedPrintIds(allPrintSelected ? [] : printableRows.map((r) => r.id))
+  }
+  async function handleBulkPrint(savePdf) {
+    const rows = filtered.filter((r) => selectedPrintIds.includes(r.id))
+    if (rows.length === 0) return
+    setBulkPrinting(true)
+    await printBulkSlips(rows, savePdf)
+    setBulkPrinting(false)
+  }
 
   return (
     <>
@@ -1550,14 +1590,57 @@ function Dashboard({ refreshKey, profile }) {
           Pengajuan {isFinanceOrAdmin ? '' : `— Dept. ${profile.department} `}
           ({filtered.length} dari {all.length} total)
         </h3>
+
+        {/* Bulk print bar — muncul saat ada pengajuan verified yang dipilih */}
+        {selectedPrintIds.length > 0 && (
+          <div className="bulk-bar">
+            <span className="bulk-count">{selectedPrintIds.length} dokumen dipilih</span>
+            <div className="bulk-actions">
+              <button className="btn btn-sm" style={{ background: '#14213d', color: '#fff' }} disabled={bulkPrinting} onClick={() => handleBulkPrint(false)}>
+                {bulkPrinting ? <><span className="spinner" />Menyiapkan...</> : '🖨 Print Semua'}
+              </button>
+              <button className="btn btn-sm" style={{ background: '#14213d', color: '#fff' }} disabled={bulkPrinting} onClick={() => handleBulkPrint(true)}>
+                {bulkPrinting ? <><span className="spinner" />Menyiapkan...</> : '📥 Simpan PDF Semua'}
+              </button>
+              <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} onClick={() => setSelectedPrintIds([])}>Batal Pilih</button>
+            </div>
+          </div>
+        )}
+
         {loadingData ? <SkeletonTable cols={6} rows={5} /> : filtered.length === 0 ? (
           <div className="empty-state">Tidak ada data yang cocok dengan filter.</div>
         ) : (
           <table>
-            <thead><tr><th>No. Request</th><th>Tanggal</th><th>Employee</th><th>Department</th><th>Total</th><th>Status</th><th></th></tr></thead>
+            <thead>
+              <tr>
+                <th style={{ width: 36 }}>
+                  {printableRows.length > 0 && (
+                    <input
+                      type="checkbox"
+                      style={{ width: 15, height: 15, cursor: 'pointer' }}
+                      checked={allPrintSelected}
+                      ref={(el) => { if (el) el.indeterminate = somePrintSelected }}
+                      onChange={togglePrintAll}
+                      title="Pilih semua dokumen yang bisa diprint"
+                    />
+                  )}
+                </th>
+                <th>No. Request</th><th>Tanggal</th><th>Employee</th><th>Department</th><th>Total</th><th>Status</th><th></th>
+              </tr>
+            </thead>
             <tbody>
               {filtered.map((r) => (
-                <tr key={r.id}>
+                <tr key={r.id} className={selectedPrintIds.includes(r.id) ? 'row-selected' : ''}>
+                  <td>
+                    {canPrintRow(r) && (
+                      <input
+                        type="checkbox"
+                        style={{ width: 15, height: 15, cursor: 'pointer' }}
+                        checked={selectedPrintIds.includes(r.id)}
+                        onChange={() => togglePrintOne(r.id)}
+                      />
+                    )}
+                  </td>
                   <td>{r.request_no}</td>
                   <td>{r.request_date}</td>
                   <td>{r.profiles?.full_name || '—'}</td>
