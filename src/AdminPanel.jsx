@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from './supabaseClient'
+import Pagination from './Pagination'
 
 const ROLES = ['employee', 'supervisor', 'manager', 'admin']
 
@@ -33,6 +34,18 @@ async function callAdminOps(session, payload) {
   return res.json()
 }
 
+// ---- REUSABLE: bulk action toolbar ----
+function BulkBar({ count, onClear, children }) {
+  if (count === 0) return null
+  return (
+    <div className="bulk-bar">
+      <div className="bulk-bar-count">✅ {count} data terpilih</div>
+      <div className="bulk-bar-actions">{children}</div>
+      <button className="btn btn-sm bulk-bar-clear" onClick={onClear}>Batal Pilih</button>
+    </div>
+  )
+}
+
 // ---- sub-tab: USER MANAGEMENT ----
 function AdminUsers() {
   const [users, setUsers] = useState([])
@@ -46,6 +59,14 @@ function AdminUsers() {
   const [msg, setMsg] = useState({ text: '', type: '' })
   const [loading, setLoading] = useState(false)
 
+  // bulk action state
+  const [selected, setSelected] = useState(new Set())
+  const [bulkRole, setBulkRole] = useState(ROLES[0])
+
+  // pagination state
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
   }, [])
@@ -57,6 +78,35 @@ function AdminUsers() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const totalPages = Math.max(1, Math.ceil(users.length / pageSize))
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
+
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return users.slice(start, start + pageSize)
+  }, [users, page, pageSize])
+
+  const allOnPageSelected = pageRows.length > 0 && pageRows.every((u) => selected.has(u.id))
+
+  function toggleOne(id) {
+    setSelected((s) => {
+      const next = new Set(s)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAllOnPage() {
+    setSelected((s) => {
+      const next = new Set(s)
+      if (allOnPageSelected) pageRows.forEach((u) => next.delete(u.id))
+      else pageRows.forEach((u) => next.add(u.id))
+      return next
+    })
+  }
+
+  function clearSelection() { setSelected(new Set()) }
 
   function startEdit(u) {
     setEditing(u.id)
@@ -131,6 +181,41 @@ function AdminUsers() {
     setLoading(false)
   }
 
+  // ---- bulk actions ----
+  async function bulkChangeRole() {
+    if (!session || selected.size === 0) return
+    if (!window.confirm(`Ubah role ${selected.size} user terpilih menjadi "${bulkRole}"?`)) return
+    setLoading(true)
+    const ids = Array.from(selected)
+    const { error } = await supabase.from('profiles').update({ role: bulkRole }).in('id', ids)
+    if (error) setMsg({ text: 'Gagal ubah role massal: ' + error.message, type: 'error' })
+    else setMsg({ text: `Role ${ids.length} user berhasil diubah menjadi "${bulkRole}".`, type: 'ok' })
+    clearSelection()
+    setLoading(false)
+    load()
+  }
+
+  async function bulkDeleteUsers() {
+    if (!session || selected.size === 0) return
+    if (!window.confirm(`Hapus ${selected.size} user terpilih?\nSemua user akan dihapus permanen dan tidak bisa login lagi.`)) return
+    setLoading(true)
+    const ids = Array.from(selected)
+    let failCount = 0
+    for (const id of ids) {
+      const result = await callAdminOps(session, { action: 'delete_user', user_id: id })
+      if (result.error) failCount++
+    }
+    setMsg({
+      text: failCount
+        ? `${ids.length - failCount} user berhasil dihapus, ${failCount} gagal.`
+        : `${ids.length} user berhasil dihapus sepenuhnya.`,
+      type: failCount ? 'error' : 'ok',
+    })
+    clearSelection()
+    setLoading(false)
+    load()
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
@@ -179,13 +264,27 @@ function AdminUsers() {
         </form>
       )}
 
+      <BulkBar count={selected.size} onClear={clearSelection}>
+        <select value={bulkRole} onChange={(e) => setBulkRole(e.target.value)}>
+          {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <button className="btn btn-primary btn-sm" onClick={bulkChangeRole} disabled={loading}>Ubah Role</button>
+        <button className="btn btn-danger btn-sm" onClick={bulkDeleteUsers} disabled={loading}>🗑 Hapus Terpilih</button>
+      </BulkBar>
+
       <table style={{ marginTop: 12 }}>
         <thead>
-          <tr><th>Nama</th><th>Email</th><th>Department</th><th>Role</th><th>Aksi</th></tr>
+          <tr>
+            <th style={{ width: 32 }}>
+              <input type="checkbox" checked={allOnPageSelected} onChange={toggleAllOnPage} />
+            </th>
+            <th>Nama</th><th>Email</th><th>Department</th><th>Role</th><th>Aksi</th>
+          </tr>
         </thead>
         <tbody>
-          {users.map((u) => (
-            <tr key={u.id}>
+          {pageRows.map((u) => (
+            <tr key={u.id} className={selected.has(u.id) ? 'row-selected' : ''}>
+              <td><input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleOne(u.id)} /></td>
               {editing === u.id ? (
                 <>
                   <td><input value={editForm.full_name} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} /></td>
@@ -216,8 +315,13 @@ function AdminUsers() {
               )}
             </tr>
           ))}
+          {pageRows.length === 0 && (
+            <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>Tidak ada data.</td></tr>
+          )}
         </tbody>
       </table>
+
+      <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={users.length} />
 
       {pwModal && (
         <div className="modal-overlay" onClick={() => setPwModal(null)}>
@@ -252,6 +356,14 @@ function AdminTransactions() {
   const [items, setItems] = useState({})
   const [msg, setMsg] = useState('')
 
+  // bulk action state
+  const [selected, setSelected] = useState(new Set())
+  const [bulkStatus, setBulkStatus] = useState(STATUS_OPTIONS[0])
+
+  // pagination state
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
   const load = useCallback(async () => {
     const { data } = await supabase
       .from('reimbursements')
@@ -266,6 +378,35 @@ function AdminTransactions() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
+
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return rows.slice(start, start + pageSize)
+  }, [rows, page, pageSize])
+
+  const allOnPageSelected = pageRows.length > 0 && pageRows.every((r) => selected.has(r.id))
+
+  function toggleOne(id) {
+    setSelected((s) => {
+      const next = new Set(s)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAllOnPage() {
+    setSelected((s) => {
+      const next = new Set(s)
+      if (allOnPageSelected) pageRows.forEach((r) => next.delete(r.id))
+      else pageRows.forEach((r) => next.add(r.id))
+      return next
+    })
+  }
+
+  function clearSelection() { setSelected(new Set()) }
 
   async function toggleItems(id) {
     if (openId === id) { setOpenId(null); return }
@@ -309,18 +450,56 @@ function AdminTransactions() {
     load()
   }
 
+  // ---- bulk actions ----
+  async function bulkChangeStatus() {
+    if (selected.size === 0) return
+    if (!window.confirm(`Ubah status ${selected.size} transaksi terpilih menjadi "${STATUS_LABEL[bulkStatus]}"?`)) return
+    const ids = Array.from(selected)
+    const { error } = await supabase.from('reimbursements').update({ status: bulkStatus }).in('id', ids)
+    if (error) setMsg('Gagal ubah status massal: ' + error.message)
+    else setMsg(`Status ${ids.length} transaksi berhasil diubah.`)
+    clearSelection()
+    load()
+  }
+
+  async function bulkDeleteTransactions() {
+    if (selected.size === 0) return
+    if (!window.confirm(`Hapus ${selected.size} transaksi terpilih?\nSemua item, lampiran, dan riwayat approval terkait juga akan dihapus.`)) return
+    const ids = Array.from(selected)
+    const { error } = await supabase.from('reimbursements').delete().in('id', ids)
+    if (error) setMsg('Gagal hapus massal: ' + error.message)
+    else setMsg(`${ids.length} transaksi berhasil dihapus.`)
+    clearSelection()
+    load()
+  }
+
   return (
     <div>
-      <h3 className="admin-section-title">📋 Manajemen Transaksi</h3>
+      <h3 className="admin-section-title">📋 Manajemen Transaksi ({rows.length})</h3>
       {msg && <div className="admin-msg">{msg}</div>}
+
+      <BulkBar count={selected.size} onClear={clearSelection}>
+        <select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
+          {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+        </select>
+        <button className="btn btn-primary btn-sm" onClick={bulkChangeStatus}>Ubah Status</button>
+        <button className="btn btn-danger btn-sm" onClick={bulkDeleteTransactions}>🗑 Hapus Terpilih</button>
+      </BulkBar>
+
       <table>
         <thead>
-          <tr><th>No. Request</th><th>Employee</th><th>Tanggal</th><th>Total</th><th>Status</th><th>Aksi</th></tr>
+          <tr>
+            <th style={{ width: 32 }}>
+              <input type="checkbox" checked={allOnPageSelected} onChange={toggleAllOnPage} />
+            </th>
+            <th>No. Request</th><th>Employee</th><th>Tanggal</th><th>Total</th><th>Status</th><th>Aksi</th>
+          </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {pageRows.map((r) => (
             <React.Fragment key={r.id}>
-              <tr>
+              <tr className={selected.has(r.id) ? 'row-selected' : ''}>
+                <td><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} /></td>
                 <td>
                   <span className="detail-toggle" onClick={() => toggleItems(r.id)}>
                     {openId === r.id ? '▼' : '▶'}
@@ -355,7 +534,7 @@ function AdminTransactions() {
               </tr>
               {openId === r.id && (
                 <tr>
-                  <td colSpan={6}>
+                  <td colSpan={7}>
                     <div className="admin-items-box">
                       <strong style={{ fontSize: 12 }}>Detail Item</strong>
                       {(items[r.id] || []).length === 0 ? (
@@ -382,8 +561,13 @@ function AdminTransactions() {
               )}
             </React.Fragment>
           ))}
+          {pageRows.length === 0 && (
+            <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>Tidak ada data.</td></tr>
+          )}
         </tbody>
       </table>
+
+      <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={rows.length} />
     </div>
   )
 }
@@ -394,12 +578,19 @@ function AdminHistory() {
   const [profiles, setProfiles] = useState({})
   const [reqNos, setReqNos] = useState({})
 
+  // bulk action state
+  const [selected, setSelected] = useState(new Set())
+
+  // pagination state
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
   const load = useCallback(async () => {
     const { data } = await supabase
       .from('approval_history')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(500)
     setRows(data || [])
 
     const { data: profs } = await supabase.from('profiles').select('id, full_name')
@@ -415,22 +606,71 @@ function AdminHistory() {
 
   useEffect(() => { load() }, [load])
 
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
+
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return rows.slice(start, start + pageSize)
+  }, [rows, page, pageSize])
+
+  const allOnPageSelected = pageRows.length > 0 && pageRows.every((h) => selected.has(h.id))
+
+  function toggleOne(id) {
+    setSelected((s) => {
+      const next = new Set(s)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAllOnPage() {
+    setSelected((s) => {
+      const next = new Set(s)
+      if (allOnPageSelected) pageRows.forEach((h) => next.delete(h.id))
+      else pageRows.forEach((h) => next.add(h.id))
+      return next
+    })
+  }
+
+  function clearSelection() { setSelected(new Set()) }
+
   async function deleteHistory(id) {
     if (!window.confirm('Hapus riwayat ini?')) return
     await supabase.from('approval_history').delete().eq('id', id)
     load()
   }
 
+  async function bulkDeleteHistory() {
+    if (selected.size === 0) return
+    if (!window.confirm(`Hapus ${selected.size} riwayat terpilih?`)) return
+    const ids = Array.from(selected)
+    await supabase.from('approval_history').delete().in('id', ids)
+    clearSelection()
+    load()
+  }
+
   return (
     <div>
-      <h3 className="admin-section-title">📜 Riwayat Approval (200 terakhir)</h3>
+      <h3 className="admin-section-title">📜 Riwayat Approval ({rows.length})</h3>
+
+      <BulkBar count={selected.size} onClear={clearSelection}>
+        <button className="btn btn-danger btn-sm" onClick={bulkDeleteHistory}>🗑 Hapus Terpilih</button>
+      </BulkBar>
+
       <table>
         <thead>
-          <tr><th>Waktu</th><th>No. Request</th><th>Approver</th><th>Aksi</th><th>Catatan</th><th></th></tr>
+          <tr>
+            <th style={{ width: 32 }}>
+              <input type="checkbox" checked={allOnPageSelected} onChange={toggleAllOnPage} />
+            </th>
+            <th>Waktu</th><th>No. Request</th><th>Approver</th><th>Aksi</th><th>Catatan</th><th></th>
+          </tr>
         </thead>
         <tbody>
-          {rows.map((h) => (
-            <tr key={h.id}>
+          {pageRows.map((h) => (
+            <tr key={h.id} className={selected.has(h.id) ? 'row-selected' : ''}>
+              <td><input type="checkbox" checked={selected.has(h.id)} onChange={() => toggleOne(h.id)} /></td>
               <td style={{ whiteSpace: 'nowrap', fontSize: 11 }}>{new Date(h.created_at).toLocaleString('id-ID')}</td>
               <td>{reqNos[h.reimbursement_id] || '—'}</td>
               <td>{profiles[h.approver_id] || '—'}</td>
@@ -439,8 +679,13 @@ function AdminHistory() {
               <td><button className="btn btn-danger btn-sm" onClick={() => deleteHistory(h.id)}>Hapus</button></td>
             </tr>
           ))}
+          {pageRows.length === 0 && (
+            <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>Tidak ada data.</td></tr>
+          )}
         </tbody>
       </table>
+
+      <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={rows.length} />
     </div>
   )
 }

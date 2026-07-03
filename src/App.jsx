@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import QRCode from 'qrcode'
 import { supabase } from './supabaseClient'
 import AdminPanel from './AdminPanel.jsx'
+import Pagination from './Pagination.jsx'
 
 const CATEGORIES = ['Transport', 'Meal', 'Office Supplies', 'Communication', 'Accommodation', 'Other']
 
@@ -1547,6 +1548,8 @@ function Dashboard({ refreshKey, profile }) {
   const [search, setSearch] = useState('')
   const [selectedPrintIds, setSelectedPrintIds] = useState([])
   const [bulkPrinting, setBulkPrinting] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   async function fetchSlipParts(r) {
     const { data: items } = await supabase
@@ -1828,6 +1831,18 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
     setDateFrom(''); setDateTo(''); setSearch('')
   }
 
+  // Reset ke halaman 1 setiap kali filter berubah, supaya tidak "nyangkut"
+  // di halaman kosong ketika hasil filter berkurang.
+  useEffect(() => { setPage(1) }, [filterStatus, filterDept, filterCategory, dateFrom, dateTo, search])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
+
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, page, pageSize])
+
   const activeChips = []
   if (search.trim()) activeChips.push({ key: 'search', label: `"${search}"`, clear: () => setSearch('') })
   if (filterStatus !== 'all') activeChips.push({ key: 'status', label: STATUS_LABEL[filterStatus], clear: () => setFilterStatus('all') })
@@ -1994,7 +2009,7 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => (
+              {pageRows.map((r) => (
                 <tr key={r.id} className={selectedPrintIds.includes(r.id) ? 'row-selected' : ''}>
                   <td>
                     {canPrintRow(r) && (
@@ -2027,6 +2042,10 @@ ${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
               ))}
             </tbody>
           </table>
+        )}
+
+        {!loadingData && filtered.length > 0 && (
+          <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={filtered.length} />
         )}
       </div>
     </>

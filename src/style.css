@@ -526,6 +526,71 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
   padding: 2px 8px;
   border-radius: 12px;
 }
+
+/* ================================================================
+   BULK ACTION BAR — admin panel (reuses .bulk-bar / .row-selected
+   already defined further below, adds the extra bits it needs)
+   ================================================================ */
+.bulk-bar-count { color: #fff; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.bulk-bar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; }
+.bulk-bar-actions select {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-size: 12px;
+}
+.bulk-bar-actions select option { color: #14213d; }
+.bulk-bar-clear {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  margin-left: auto;
+}
+td input[type="checkbox"], th input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--teal);
+}
+
+/* ================================================================
+   PAGINATION BAR — page-size selector + total count, admin panel
+   ================================================================ */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.pagination-info { font-size: 12px; color: var(--text-muted); }
+.pagination-controls { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.pagination-size { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+.pagination-size select {
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.pagination-nav { display: flex; align-items: center; gap: 4px; }
+.pagination-nav .btn {
+  background: #f1f3f5;
+  color: var(--text);
+  min-width: 30px;
+  padding: 5px 8px;
+}
+.pagination-nav .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pagination-page { font-size: 12px; font-weight: 600; color: var(--navy); padding: 0 6px; white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .pagination-bar { flex-direction: column; align-items: flex-start; }
+  .bulk-bar { flex-direction: column; align-items: stretch; }
+  .bulk-bar-clear { margin-left: 0; }
+}
 .login-logo {
   font-size: 28px;
   font-weight: 800;
