@@ -725,6 +725,12 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
 }
 
 // ---------------------------------------------------------------- APPROVAL ----
+// Satu menu Approval untuk semua approver. Untuk Manager Departemen Finance
+// (atau Admin), antrian ini digabung dengan tahap "Approval Finance Manager":
+// selain melihat pengajuan departemen sendiri yang menunggu approval mereka
+// (status 'submitted'), mereka juga melihat SEMUA pengajuan dari SEMUA
+// departemen yang sudah lolos approval departemen masing-masing dan tinggal
+// menunggu approval final Finance Manager sebelum dicairkan (status 'approved').
 function ApprovalQueue({ profile, refreshKey, onActed }) {
   const [rows, setRows] = useState([])
   const [empProfiles, setEmpProfiles] = useState({}) // id -> { full_name, department }
@@ -739,10 +745,13 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
   // Supervisor & Manager (termasuk yang di department Finance) hanya melihat
   // antrian approval di department mereka sendiri, sama seperti department lain.
   const isAdmin = profile.role === 'admin'
+  // Manager Departemen Finance (atau Admin) juga bertindak sebagai approver
+  // final lintas-departemen (tahap "Approval Finance Manager").
+  const isFm = isFinanceManager(profile)
 
   useEffect(() => {
     async function load() {
-      // Ambil semua reimbursement status submitted, beserta data department & role karyawan
+      // ---- Tahap 1: approval departemen (status 'submitted') ----
       let query = supabase
         .from('reimbursements')
         .select('*, profiles(id, full_name, department, role)')
@@ -756,21 +765,39 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
       const { data } = await query.order('created_at', { ascending: true })
 
       // Filter tambahan di client: Supervisor & Manager hanya melihat departemen sendiri.
-      const filtered = isAdmin
+      const deptRows = isAdmin
         ? (data || [])
         : (data || []).filter((r) => r.profiles?.department === profile.department)
 
-      setRows(filtered)
+      // ---- Tahap 2: Approval Finance Manager (status 'approved', lintas departemen) ----
+      // Hanya untuk Manager Departemen Finance / Admin. Berlaku untuk pengajuan
+      // dari SATU departemen maupun departemen lain (semua departemen).
+      let fmRows = []
+      if (isFm) {
+        const { data: fmData } = await supabase
+          .from('reimbursements')
+          .select('*, profiles(id, full_name, department, role)')
+          .eq('status', 'approved')
+          .order('created_at', { ascending: true })
+        fmRows = fmData || []
+      }
+
+      const merged = [
+        ...deptRows.map((r) => ({ ...r, _stage: 'dept' })),
+        ...fmRows.map((r) => ({ ...r, _stage: 'fm' })),
+      ].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+
+      setRows(merged)
 
       // Simpan map profil untuk ditampilkan di tabel & modal
       const map = {}
-      ;(filtered).forEach((r) => {
+      merged.forEach((r) => {
         if (r.profiles) map[r.employee_id] = r.profiles
       })
       setEmpProfiles(map)
     }
     load()
-  }, [profile.role, profile.department, refreshKey, isAdmin])
+  }, [profile.role, profile.department, refreshKey, isAdmin, isFm])
 
   function requestAct(row, action) {
     setConfirm({ row, action })
@@ -779,7 +806,49 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
   async function confirmAct() {
     const { row, action } = confirm
     setProcessing(true)
+    const { error } = await applyAction(row, action, noteDraft[row.id])
+    setProcessing(false)
+    if (error) {
+      alert('Gagal memproses aksi: ' + error.message)
+      return
+    }
+    setConfirm(null)
+    onActed && onActed()
+  }
 
+  // Menjalankan satu aksi approve/reject/revision untuk satu baris, otomatis
+  // mengikuti tahap yang sesuai (_stage 'dept' = approval departemen SPV/Manager,
+  // _stage 'fm' = Approval Finance Manager lintas-departemen sebelum pencairan).
+  async function applyAction(row, action, note) {
+    if (row._stage === 'fm') {
+      // ---- Tahap Approval Finance Manager (status 'approved' -> 'finance_approved') ----
+      if (action === 'approved') {
+        const { error } = await supabase.from('reimbursements').update({ status: 'finance_approved' }).eq('id', row.id)
+        if (error) return { error }
+        const { error: histErr } = await supabase.from('approval_history').insert({
+          reimbursement_id: row.id,
+          approver_id: profile.id,
+          action: 'finance_approved',
+          notes: note || 'Disetujui Finance Manager — siap dicairkan',
+        })
+        return { error: histErr }
+      } else {
+        const newStatus = action === 'rejected' ? 'rejected' : 'revision'
+        const { error } = await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
+        if (error) return { error }
+        const { error: histErr } = await supabase.from('approval_history').insert({
+          reimbursement_id: row.id,
+          approver_id: profile.id,
+          action: newStatus,
+          notes: action === 'rejected'
+            ? `[Rejected by Finance Manager] ${note || ''}`.trim()
+            : (note || null),
+        })
+        return { error: histErr }
+      }
+    }
+
+    // ---- Tahap approval departemen (status 'submitted') ----
     if (action === 'approved') {
       const submitterRole = row.profiles?.role
       const next = nextApprovalRole(row.required_role, submitterRole, row.total_amount)
@@ -787,44 +856,46 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
       if (next) {
         // Masih ada tahap approval berikutnya (masih status 'submitted')
         const NEXT_LABEL = { manager: 'Manager' }
-        await supabase.from('reimbursements')
+        const { error } = await supabase.from('reimbursements')
           .update({ required_role: next })
           .eq('id', row.id)
-        await supabase.from('approval_history').insert({
+        if (error) return { error }
+        const { error: histErr } = await supabase.from('approval_history').insert({
           reimbursement_id: row.id,
           approver_id: profile.id,
           action: 'approved',
-          notes: (noteDraft[row.id] || '') + ` [Disetujui, diteruskan ke ${NEXT_LABEL[next] || next}]`,
+          notes: (note || '') + ` [Disetujui, diteruskan ke ${NEXT_LABEL[next] || next}]`,
         })
+        return { error: histErr }
       } else {
         // Approval departemen selesai → lanjut ke Approval Finance Manager (sebelum pencairan)
-        await supabase.from('reimbursements')
+        const { error } = await supabase.from('reimbursements')
           .update({ status: 'approved' })
           .eq('id', row.id)
-        await supabase.from('approval_history').insert({
+        if (error) return { error }
+        const { error: histErr } = await supabase.from('approval_history').insert({
           reimbursement_id: row.id,
           approver_id: profile.id,
           action: 'approved',
-          notes: noteDraft[row.id] || null,
+          notes: note || null,
         })
+        return { error: histErr }
       }
     } else {
       const newStatus = action === 'rejected' ? 'rejected' : 'revision'
       const rejectedByLabel = REJECTED_BY_LABEL[row.required_role] || profile.role
-      await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
-      await supabase.from('approval_history').insert({
+      const { error } = await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
+      if (error) return { error }
+      const { error: histErr } = await supabase.from('approval_history').insert({
         reimbursement_id: row.id,
         approver_id: profile.id,
         action: newStatus,
         notes: action === 'rejected'
-          ? `[Rejected by ${rejectedByLabel}] ${noteDraft[row.id] || ''}`.trim()
-          : (noteDraft[row.id] || null),
+          ? `[Rejected by ${rejectedByLabel}] ${note || ''}`.trim()
+          : (note || null),
       })
+      return { error: histErr }
     }
-
-    setProcessing(false)
-    setConfirm(null)
-    onActed && onActed()
   }
 
   // ---- Select helpers ----
@@ -842,44 +913,18 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
   async function confirmBulkAct() {
     const { action } = bulkConfirm
     setProcessing(true)
+    const errors = []
     for (const id of selected) {
       const row = rows.find((x) => x.id === id)
       if (!row) continue
-
-      if (action === 'approved') {
-        const submitterRole = row.profiles?.role
-        const next = nextApprovalRole(row.required_role, submitterRole, row.total_amount)
-        const NEXT_LABEL = { manager: 'Manager' }
-
-        if (next) {
-          await supabase.from('reimbursements').update({ required_role: next }).eq('id', id)
-          await supabase.from('approval_history').insert({
-            reimbursement_id: id, approver_id: profile.id, action: 'approved',
-            notes: (bulkNote || '') + ` [Disetujui, diteruskan ke ${NEXT_LABEL[next] || next}]`,
-          })
-        } else {
-          await supabase.from('reimbursements').update({ status: 'approved' }).eq('id', id)
-          await supabase.from('approval_history').insert({
-            reimbursement_id: id, approver_id: profile.id, action: 'approved',
-            notes: bulkNote || 'Bulk approve',
-          })
-        }
-      } else {
-        const newStatus = action === 'rejected' ? 'rejected' : 'revision'
-        const rejectedByLabel = REJECTED_BY_LABEL[row.required_role] || profile.role
-        await supabase.from('reimbursements').update({ status: newStatus }).eq('id', id)
-        await supabase.from('approval_history').insert({
-          reimbursement_id: id, approver_id: profile.id, action: newStatus,
-          notes: action === 'rejected'
-            ? `[Rejected by ${rejectedByLabel}] ${bulkNote || ''}`.trim()
-            : (bulkNote || `Bulk ${action}`),
-        })
-      }
+      const { error } = await applyAction(row, action, bulkNote || (action === 'approved' ? 'Bulk approve' : `Bulk ${action}`))
+      if (error) errors.push(`${row.request_no}: ${error.message}`)
     }
     setProcessing(false)
     setBulkConfirm(null)
     setSelected([])
     setBulkNote('')
+    if (errors.length) alert('Sebagian aksi gagal diproses:\n' + errors.join('\n'))
     onActed && onActed()
   }
 
@@ -896,6 +941,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
       icon: '✓',
       desc: (row) => {
         if (!row) return ''
+        if (row._stage === 'fm') return 'Setelah Anda setujui (Finance Manager), pengajuan siap dicairkan dan akan masuk ke antrian Finance Verification.'
         const next = nextApprovalRole(row.required_role, row.profiles?.role, row.total_amount)
         if (next === 'manager') return 'Nominal ≥ Rp5jt — setelah Anda setujui, pengajuan diteruskan ke Manager Departemen.'
         return 'Setelah Anda setujui, pengajuan akan masuk ke antrian Approval Finance Manager (sebelum dana dicairkan).'
@@ -905,9 +951,18 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
     revision: { label: 'Kembalikan untuk Revisi', color: '#b35900', icon: '↩', desc: () => 'Pengajuan dikembalikan ke employee untuk diperbaiki.' },
   }
 
-  const queueLabel = isAdmin
-    ? 'Semua Departemen (Admin)'
-    : `Dept. ${profile.department} — Level: ${profile.role}`
+  // Label tahap per baris, ditampilkan sebagai badge di tabel supaya jelas
+  // mana pengajuan tahap approval departemen vs tahap Approval Finance Manager.
+  function stageLabel(row) {
+    if (row._stage === 'fm') return 'Finance Manager (Final)'
+    return APPROVER_ROLE_LABEL[row.required_role] || row.required_role
+  }
+
+  const queueLabel = isFm
+    ? (isAdmin ? 'Semua Departemen (Admin) + Approval Finance Manager' : `Dept. ${profile.department} + Approval Finance Manager (Semua Departemen)`)
+    : isAdmin
+      ? 'Semua Departemen (Admin)'
+      : `Dept. ${profile.department} — Level: ${profile.role}`
 
   return (
     <>
@@ -934,7 +989,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
         )}
 
         {rows.length === 0 ? (
-          <div className="empty-state">Tidak ada pengajuan dari departemen Anda yang menunggu approval.</div>
+          <div className="empty-state">Tidak ada pengajuan yang menunggu approval Anda saat ini.</div>
         ) : (
           <table>
             <thead>
@@ -948,7 +1003,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
                     onChange={toggleAll}
                   />
                 </th>
-                <th>No. Request</th><th>Employee</th><th>Departemen</th><th>Total</th><th>Catatan</th><th>Aksi</th>
+                <th>No. Request</th><th>Employee</th><th>Departemen</th>{isFm && <th>Tahap</th>}<th>Total</th><th>Catatan</th><th>Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -965,6 +1020,20 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
                   <td>{r.request_no}</td>
                   <td>{empProfiles[r.employee_id]?.full_name || '—'}</td>
                   <td><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{empProfiles[r.employee_id]?.department || '—'}</span></td>
+                  {isFm && (
+                    <td>
+                      <span
+                        style={{
+                          fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999,
+                          background: r._stage === 'fm' ? '#fdecea' : '#eaf4fd',
+                          color: r._stage === 'fm' ? '#b3261e' : '#0b5fa5',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {stageLabel(r)}
+                      </span>
+                    </td>
+                  )}
                   <td>{rupiah(r.total_amount)}</td>
                   <td style={{ minWidth: 150 }}>
                     <input
@@ -1081,148 +1150,6 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
   )
 }
 
-// ---------------------------------------------------------------- APPROVAL FINANCE MANAGER (SEBELUM PENCAIRAN) ----
-// Tahap ini WAJIB dilalui oleh SEMUA pengajuan dari SEMUA departemen (termasuk
-// department Finance sendiri) setelah disetujui pimpinan departemen masing-
-// masing (Supervisor/Manager). Hanya Finance Manager (role='manager' di
-// department Finance) atau Admin yang boleh approve di tahap ini. Uang baru
-// boleh dicairkan SETELAH tahap ini disetujui.
-function FinanceManagerApproval({ profile, refreshKey, onActed }) {
-  const [rows, setRows] = useState([])
-  const [noteDraft, setNoteDraft] = useState({})
-  const [confirm, setConfirm] = useState(null) // { row, action }
-  const [processing, setProcessing] = useState(false)
-
-  useEffect(() => {
-    async function load() {
-      // Lintas departemen: Finance Manager approve pengajuan dari SEMUA departemen.
-      const { data } = await supabase
-        .from('reimbursements')
-        .select('*, profiles(id, full_name, department, role)')
-        .eq('status', 'approved')
-        .order('created_at', { ascending: true })
-      setRows(data || [])
-    }
-    load()
-  }, [refreshKey])
-
-  function requestAct(row, action) {
-    setConfirm({ row, action })
-  }
-
-  async function confirmAct() {
-    const { row, action } = confirm
-    setProcessing(true)
-
-    if (action === 'finance_approved') {
-      await supabase.from('reimbursements').update({ status: 'finance_approved' }).eq('id', row.id)
-      await supabase.from('approval_history').insert({
-        reimbursement_id: row.id,
-        approver_id: profile.id,
-        action: 'finance_approved',
-        notes: noteDraft[row.id] || 'Disetujui Finance Manager — siap dicairkan',
-      })
-    } else {
-      const newStatus = action === 'rejected' ? 'rejected' : 'revision'
-      await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
-      await supabase.from('approval_history').insert({
-        reimbursement_id: row.id,
-        approver_id: profile.id,
-        action: newStatus,
-        notes: action === 'rejected'
-          ? `[Rejected by Finance Manager] ${noteDraft[row.id] || ''}`.trim()
-          : (noteDraft[row.id] || null),
-      })
-    }
-
-    setProcessing(false)
-    setConfirm(null)
-    onActed && onActed()
-  }
-
-  const FM_ACTION_META = {
-    finance_approved: {
-      label: 'Approve', color: 'var(--success)', icon: '✓',
-      desc: () => 'Setelah Anda setujui, pengajuan akan siap dicairkan. Setelah dana ditransfer/dibayarkan, tahap Finance Verification perlu dilakukan untuk menutup pengajuan ini.',
-    },
-    rejected: { label: 'Reject', color: 'var(--danger)', icon: '✕', desc: () => 'Pengajuan akan ditolak dan employee akan diberitahu.' },
-    revision: { label: 'Kembalikan untuk Revisi', color: '#b35900', icon: '↩', desc: () => 'Pengajuan dikembalikan ke employee untuk diperbaiki.' },
-  }
-
-  return (
-    <div className="card">
-      <h3>Approval Finance Manager <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 13 }}>(Sebelum Pencairan — Semua Departemen)</span></h3>
-      {rows.length === 0 ? (
-        <div className="empty-state">Tidak ada pengajuan yang menunggu Approval Finance Manager.</div>
-      ) : (
-        <table>
-          <thead>
-            <tr><th>No. Request</th><th>Employee</th><th>Departemen</th><th>Total</th><th>Catatan</th><th>Aksi</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id}>
-                <td>{r.request_no}</td>
-                <td>{r.profiles?.full_name || '—'}</td>
-                <td>{r.profiles?.department || '—'}</td>
-                <td>{rupiah(r.total_amount)}</td>
-                <td>
-                  <input
-                    placeholder="Catatan (opsional)"
-                    value={noteDraft[r.id] || ''}
-                    onChange={(e) => setNoteDraft({ ...noteDraft, [r.id]: e.target.value })}
-                  />
-                </td>
-                <td style={{ whiteSpace: 'nowrap' }}>
-                  <button className="btn btn-success btn-sm" onClick={() => requestAct(r, 'finance_approved')}>✓ Approve</button>{' '}
-                  <button className="btn btn-danger btn-sm" onClick={() => requestAct(r, 'rejected')}>✕</button>{' '}
-                  <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => requestAct(r, 'revision')}>↩</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {confirm && (
-        <div className="modal-overlay" onClick={() => !processing && setConfirm(null)}>
-          <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="confirm-icon" style={{ color: FM_ACTION_META[confirm.action].color }}>
-              {FM_ACTION_META[confirm.action].icon}
-            </div>
-            <h3 className="confirm-title">Konfirmasi {FM_ACTION_META[confirm.action].label}</h3>
-            <p className="confirm-desc">{FM_ACTION_META[confirm.action].desc()}</p>
-
-            <div className="confirm-detail">
-              <div className="confirm-row"><span>No. Request</span><strong>{confirm.row.request_no}</strong></div>
-              <div className="confirm-row"><span>Employee</span><strong>{confirm.row.profiles?.full_name || '—'}</strong></div>
-              <div className="confirm-row"><span>Departemen</span><strong>{confirm.row.profiles?.department || '—'}</strong></div>
-              <div className="confirm-row"><span>Total</span><strong>{rupiah(confirm.row.total_amount)}</strong></div>
-              {noteDraft[confirm.row.id] && (
-                <div className="confirm-row"><span>Catatan</span><strong>{noteDraft[confirm.row.id]}</strong></div>
-              )}
-            </div>
-
-            <div className="confirm-actions">
-              <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => setConfirm(null)} disabled={processing}>
-                Batal
-              </button>
-              <button
-                className="btn"
-                style={{ background: FM_ACTION_META[confirm.action].color, color: '#fff', flex: 1 }}
-                onClick={confirmAct}
-                disabled={processing}
-              >
-                {processing ? <><span className="spinner" />{`${FM_ACTION_META[confirm.action].label}...`}</> : `Ya, ${FM_ACTION_META[confirm.action].label}`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ---------------------------------------------------------------- FINANCE VERIFICATION (SETELAH PENCAIRAN) ----
 // Tahap ini dilakukan SETELAH uang benar-benar sudah ditransfer/dibayarkan ke
 // pengaju, sebagai konfirmasi/penutupan pengajuan. Bisa dilakukan oleh SIAPA
@@ -1234,14 +1161,19 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
   const [openId, setOpenId] = useState(null)
   const [attMap, setAttMap] = useState({})
   const [noteDraft, setNoteDraft] = useState({})
+  const [confirm, setConfirm] = useState(null)   // { row, action }
+  const [processing, setProcessing] = useState(false)
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
     async function load() {
-      const { data } = await supabase
+      setLoadError('')
+      const { data, error } = await supabase
         .from('reimbursements')
         .select('*')
         .eq('status', 'finance_approved')
         .order('created_at', { ascending: true })
+      if (error) { setLoadError(error.message); return }
       setRows(data || [])
       if (data && data.length) {
         const ids = [...new Set(data.map((r) => r.employee_id))]
@@ -1263,22 +1195,56 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
     }
   }
 
-  async function act(row, action) {
+  function requestAct(row, action) {
+    setConfirm({ row, action })
+  }
+
+  async function confirmAct() {
+    const { row, action } = confirm
+    setProcessing(true)
     const newStatus = action === 'verified' ? 'verified' : 'revision'
-    await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
-    await supabase.from('approval_history').insert({
+    const { error: updErr } = await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
+    if (updErr) {
+      setProcessing(false)
+      alert('Gagal memproses verifikasi: ' + updErr.message)
+      return
+    }
+    const { error: histErr } = await supabase.from('approval_history').insert({
       reimbursement_id: row.id,
       approver_id: profile.id,
       action: newStatus,
-      notes: noteDraft[row.id] || null,
+      notes: noteDraft[row.id] || (action === 'verified' ? 'Dana sudah dicairkan / dibayarkan' : null),
     })
+    setProcessing(false)
+    if (histErr) {
+      // Status reimbursement sudah berhasil diubah, tapi pencatatan riwayat gagal —
+      // tetap beri tahu user supaya tidak mengira aksi gagal total.
+      alert('Verifikasi berhasil, namun gagal mencatat riwayat: ' + histErr.message)
+    }
+    setConfirm(null)
     onActed && onActed()
+  }
+
+  const VERIFY_ACTION_META = {
+    verified: {
+      label: 'Verifikasi',
+      color: 'var(--success)',
+      icon: '✓',
+      desc: (row) => `Konfirmasi bahwa dana sebesar ${rupiah(row?.total_amount)} untuk ${row?.request_no} sudah benar-benar ditransfer/dicairkan ke pengaju. Pengajuan akan ditutup sebagai "Terverifikasi".`,
+    },
+    revision: {
+      label: 'Kembalikan',
+      color: '#b35900',
+      icon: '↩',
+      desc: () => 'Pengajuan dikembalikan untuk revisi (misalnya bukti transaksi kurang lengkap/sesuai).',
+    },
   }
 
   return (
     <div className="card">
       <h3>Finance Verification <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 13 }}>(Konfirmasi setelah dana dicairkan)</span></h3>
-      {rows.length === 0 ? (
+      {loadError && <div className="empty-state" style={{ color: 'var(--danger)' }}>Gagal memuat data: {loadError}</div>}
+      {rows.length === 0 && !loadError ? (
         <div className="empty-state">Tidak ada pengajuan yang menunggu verifikasi finance.</div>
       ) : (
         <table>
@@ -1304,8 +1270,8 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
                     />
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
-                    <button className="btn btn-success btn-sm" onClick={() => act(r, 'verified')}>Verifikasi</button>{' '}
-                    <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => act(r, 'revision')}>Kembalikan</button>
+                    <button className="btn btn-success btn-sm" onClick={() => requestAct(r, 'verified')}>Verifikasi</button>{' '}
+                    <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => requestAct(r, 'revision')}>Kembalikan</button>
                   </td>
                 </tr>
                 {openId === r.id && (
@@ -1339,6 +1305,47 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
             ))}
           </tbody>
         </table>
+      )}
+
+      {/* ---- Pop-up konfirmasi verifikasi / kembalikan ---- */}
+      {confirm && (
+        <div className="modal-overlay" onClick={() => !processing && setConfirm(null)}>
+          <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-icon" style={{ color: VERIFY_ACTION_META[confirm.action].color }}>
+              {VERIFY_ACTION_META[confirm.action].icon}
+            </div>
+            <h3 className="confirm-title">Konfirmasi {VERIFY_ACTION_META[confirm.action].label}</h3>
+            <p className="confirm-desc">{VERIFY_ACTION_META[confirm.action].desc(confirm.row)}</p>
+
+            <div className="confirm-detail">
+              <div className="confirm-row"><span>No. Request</span><strong>{confirm.row.request_no}</strong></div>
+              <div className="confirm-row"><span>Employee</span><strong>{names[confirm.row.employee_id] || '—'}</strong></div>
+              <div className="confirm-row"><span>Total Dicairkan</span><strong>{rupiah(confirm.row.total_amount)}</strong></div>
+              {noteDraft[confirm.row.id] && (
+                <div className="confirm-row"><span>Catatan</span><strong>{noteDraft[confirm.row.id]}</strong></div>
+              )}
+            </div>
+
+            <div className="confirm-actions">
+              <button
+                className="btn"
+                style={{ background: '#f1f3f5', color: '#333', flex: 1 }}
+                onClick={() => setConfirm(null)}
+                disabled={processing}
+              >
+                Batal
+              </button>
+              <button
+                className="btn"
+                style={{ background: VERIFY_ACTION_META[confirm.action].color, color: '#fff', flex: 1 }}
+                onClick={confirmAct}
+                disabled={processing}
+              >
+                {processing ? <><span className="spinner" />Memproses...</> : `Ya, ${VERIFY_ACTION_META[confirm.action].label}`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -2120,8 +2127,10 @@ export default function App() {
     </div>
   )
 
+  // Approval Finance Manager (tahap sebelum pencairan) sudah digabung ke dalam
+  // menu "Approval" biasa — Manager Departemen Finance / Admin otomatis melihat
+  // pengajuan lintas departemen di tahap itu juga saat membuka menu Approval.
   const isApprover = ['supervisor', 'manager', 'admin'].includes(profile.role)
-  const isFinanceMgr = isFinanceManager(profile)
   const isFinance  = isFinanceUser(profile)
 
   function navigate(key) {
@@ -2134,7 +2143,6 @@ export default function App() {
     { key: 'submit',    label: 'Submit Reimbursement',  icon: Ico.submit,    show: true },
     { key: 'mine',      label: 'Pengajuan Saya',        icon: Ico.mine,      show: true },
     { key: 'approval',  label: 'Approval',              icon: Ico.approval,  show: isApprover },
-    { key: 'fm_approval', label: 'Approval Finance Manager', icon: Ico.approval, show: isFinanceMgr },
     { key: 'finance',   label: 'Finance Verification',  icon: Ico.finance,   show: isFinance },
     { key: 'signature', label: 'Tanda Tangan Saya',      icon: Ico.signature, show: true },
     { key: 'admin',     label: 'Admin Panel',           icon: Ico.admin,     show: profile.role === 'admin', accent: true },
@@ -2214,7 +2222,6 @@ export default function App() {
             {tab === 'submit'    && <SubmitForm profile={profile} onSubmitted={bump} />}
             {tab === 'mine'      && <MyRequests profile={profile} refreshKey={refreshKey} onRefresh={bump} />}
             {tab === 'approval'  && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
-            {tab === 'fm_approval' && isFinanceMgr && <FinanceManagerApproval profile={profile} refreshKey={refreshKey} onActed={bump} />}
             {tab === 'finance'   && isFinance  && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
             {tab === 'admin'     && profile.role === 'admin' && <AdminPanel />}
             {tab === 'signature' && <MyProfile profile={profile} onUpdated={loadProfile} />}
