@@ -1575,16 +1575,10 @@ function Dashboard({ refreshKey, profile }) {
     // Ekstrak nama dari history berdasarkan role & urutan
     const hist = history || []
     const employeeName   = r.profiles?.full_name || '—'
-    const submitterRole  = r.profiles?.role
     const supervisorRow  = hist.find((h) => h.action === 'approved' && h.profiles?.role === 'supervisor')
     const managerRow     = hist.find((h) => h.action === 'approved' && h.profiles?.role === 'manager')
     const financeMgrRow  = hist.find((h) => h.action === 'finance_approved')
     const verifierRow    = hist.find((h) => h.action === 'verified')
-    const skipDeptStages = SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)
-    // Manager approve baik karena nominal >= threshold, MAUPUN karena pengaju
-    // adalah Supervisor (approval diri sendiri di-skip, langsung ke Manager).
-    const needsManager    = !skipDeptStages
-      && (SELF_SKIP_TO_MANAGER_ROLES.includes(submitterRole) || Number(r.total_amount) >= 5000000)
 
     const supervisorName  = supervisorRow?.profiles?.full_name  || null
     const managerName     = managerRow?.profiles?.full_name     || null
@@ -1618,13 +1612,21 @@ function Dashboard({ refreshKey, profile }) {
         <div class="sign-role">(${role})</div>
       </div>`
 
+    // Hanya tampilkan kolom tanda tangan untuk tahap yang BENAR-BENAR dilalui
+    // pengajuan ini (ada baris di approval_history-nya). Pembuat pengajuan
+    // selalu ditampilkan; tahap lain (Supervisor/Manager/Finance Manager/
+    // Verifikasi) hanya muncul kalau memang ada orang yang approve di tahap
+    // itu — jadi tahap yang di-skip (mis. pengaju Supervisor yang approval
+    // dirinya sendiri di-skip, atau pengaju Manager/Admin yang tanpa approval
+    // departemen) tidak menampilkan kolom tanda tangan kosong yang tidak relevan.
     const signCols = [
       signBox('Pembuat Pengajuan', 'Employee', employeeName, employeeSig),
-      ...(skipDeptStages ? [] : [signBox('Menyetujui Tahap 1', 'Supervisor', supervisorName, supervisorSig)]),
-      ...(needsManager ? [signBox('Menyetujui Tahap 2', 'Manager', managerName, managerSig)] : []),
-      signBox('Approval Finance Manager', 'Finance Manager', financeMgrName, financeMgrSig),
-      signBox('Verifikasi Pencairan', 'Finance', verifierName, verifierSig),
+      ...(supervisorRow ? [signBox('Menyetujui Tahap 1', 'Supervisor', supervisorName, supervisorSig)] : []),
+      ...(managerRow    ? [signBox('Menyetujui Tahap 2', 'Manager', managerName, managerSig)] : []),
+      ...(financeMgrRow ? [signBox('Approval Finance Manager', 'Finance Manager', financeMgrName, financeMgrSig)] : []),
+      ...(verifierRow   ? [signBox('Verifikasi Pencairan', 'Finance', verifierName, verifierSig)] : []),
     ].join('')
+
 
     const printDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
 
