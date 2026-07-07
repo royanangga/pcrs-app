@@ -1393,6 +1393,159 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
   )
 }
 
+// ---------------------------------------------------------------- SALDO KAS (CASH BALANCE) ----
+// Hanya untuk user department "Finance" (role apa pun) atau admin — dijaga di
+// level UI (nav item disembunyikan) DAN di level database (RLS policy
+// "cash_topups_select_finance" / "..._insert_finance" di supabase-update-v3.sql),
+// jadi tetap aman walau seseorang mencoba akses langsung lewat API.
+function CashBalance({ profile, refreshKey, onActed }) {
+  const [topups, setTopups] = useState([])
+  const [verifiedTotal, setVerifiedTotal] = useState(0)
+  const [loadingData, setLoadingData] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [names, setNames] = useState({})
+
+  const [amount, setAmount] = useState('')
+  const [topupDate, setTopupDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+
+  const load = useCallback(async () => {
+    setLoadingData(true)
+    setLoadError('')
+
+    const [topupRes, verifiedRes] = await Promise.all([
+      supabase.from('cash_topups').select('*').order('topup_date', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('reimbursements').select('total_amount').eq('status', 'verified'),
+    ])
+
+    if (topupRes.error) {
+      setLoadError(topupRes.error.message)
+      setLoadingData(false)
+      return
+    }
+
+    setTopups(topupRes.data || [])
+    setVerifiedTotal((verifiedRes.data || []).reduce((s, r) => s + Number(r.total_amount), 0))
+
+    const ids = [...new Set((topupRes.data || []).map((t) => t.created_by).filter(Boolean))]
+    if (ids.length) {
+      const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids)
+      const map = {}
+      (profs || []).forEach((p) => { map[p.id] = p.full_name })
+      setNames(map)
+    }
+    setLoadingData(false)
+  }, [])
+
+  useEffect(() => { load() }, [load, refreshKey])
+
+  const totalTopup = topups.reduce((s, t) => s + Number(t.amount), 0)
+  const saldo = totalTopup - verifiedTotal
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setSaveError('')
+    const amt = Number(amount)
+    if (!amt || amt <= 0) { setSaveError('Nominal harus lebih dari 0.'); return }
+
+    setSaving(true)
+    const { error } = await supabase.from('cash_topups').insert({
+      amount: amt,
+      topup_date: topupDate,
+      note: note || null,
+      created_by: profile.id,
+    })
+    setSaving(false)
+    if (error) { setSaveError('Gagal menyimpan: ' + error.message); return }
+
+    setAmount(''); setNote('')
+    setTopupDate(new Date().toISOString().slice(0, 10))
+    load()
+    onActed && onActed()
+  }
+
+  return (
+    <>
+      <div className="grid-kpi">
+        {loadingData ? Array(3).fill(0).map((_, i) => (
+          <div className="kpi-box" key={i}>
+            <div className="skeleton-row short" style={{ marginBottom: 8 }} />
+            <div className="skeleton-row medium" style={{ height: 28 }} />
+          </div>
+        )) : <>
+          <div className="kpi-box">
+            <div className="label">Saldo Kas Saat Ini</div>
+            <div className="value" style={{ color: saldo < 0 ? 'var(--danger)' : undefined }}>{rupiah(saldo)}</div>
+          </div>
+          <div className="kpi-box"><div className="label">Total Kas Masuk (Topup)</div><div className="value">{rupiah(totalTopup)}</div></div>
+          <div className="kpi-box"><div className="label">Total Sudah Dicairkan</div><div className="value">{rupiah(verifiedTotal)}</div></div>
+        </>}
+      </div>
+
+      {saldo < 0 && !loadingData && (
+        <div className="empty-state" style={{ color: 'var(--danger)', marginBottom: 16 }}>
+          Saldo kas minus. Pengeluaran yang sudah terverifikasi melebihi total kas masuk yang tercatat — segera isi ulang saldo kas.
+        </div>
+      )}
+
+      <div className="card" style={{ maxWidth: 480, marginBottom: 20 }}>
+        <h3>Isi Ulang Saldo Kas</h3>
+        <form onSubmit={handleSubmit}>
+          <label>Nominal (Rp)</label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            placeholder="cth. 5000000"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            required
+          />
+          <label>Tanggal</label>
+          <input type="date" value={topupDate} onChange={(e) => setTopupDate(e.target.value)} required />
+          <label>Catatan (opsional)</label>
+          <input
+            type="text"
+            placeholder="cth. Transfer dari rekening perusahaan"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+          {saveError && <div className="empty-state" style={{ color: 'var(--danger)' }}>{saveError}</div>}
+          <button className="btn btn-success" type="submit" disabled={saving} style={{ marginTop: 10 }}>
+            {saving ? <><span className="spinner" />Menyimpan...</> : 'Tambah Saldo'}
+          </button>
+        </form>
+      </div>
+
+      <div className="card">
+        <h3>Riwayat Isi Ulang Kas</h3>
+        {loadError && <div className="empty-state" style={{ color: 'var(--danger)' }}>Gagal memuat data: {loadError}</div>}
+        {topups.length === 0 && !loadError ? (
+          <div className="empty-state">Belum ada riwayat isi ulang kas.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr><th>Tanggal</th><th>Nominal</th><th>Catatan</th><th>Diisi oleh</th></tr>
+            </thead>
+            <tbody>
+              {topups.map((t) => (
+                <tr key={t.id}>
+                  <td>{t.topup_date}</td>
+                  <td>{rupiah(t.amount)}</td>
+                  <td>{t.note || '—'}</td>
+                  <td>{names[t.created_by] || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  )
+}
+
 // ---------------------------------------------------------------- TANDA TANGAN SAYA ----
 function MyProfile({ profile, onUpdated }) {
   const canvasRef = useRef(null)
@@ -2031,6 +2184,7 @@ const Ico = {
   mine:       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
   approval:   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
   finance:    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>,
+  cash:       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 6v12M18 6v12"/></svg>,
   admin:      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>,
   signature:  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17c2-1 3-3 4-5 1.5-3 2-6 3.5-6S12 9 13 12c1 3 2 5 4 5 1.3 0 2-1 3-2"/><path d="M3 21h18"/></svg>,
   logout:     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
@@ -2044,6 +2198,7 @@ const PAGE_TITLE = {
   mine:      'Pengajuan Saya',
   approval:  'Approval',
   finance:   'Finance Verification',
+  cash:      'Saldo Kas',
   admin:     'Admin Panel',
   signature: 'Tanda Tangan Saya',
 }
@@ -2097,6 +2252,7 @@ export default function App() {
     { key: 'mine',      label: 'Pengajuan Saya',        icon: Ico.mine,      show: true },
     { key: 'approval',  label: 'Approval',              icon: Ico.approval,  show: isApprover },
     { key: 'finance',   label: 'Finance Verification',  icon: Ico.finance,   show: isFinance },
+    { key: 'cash',      label: 'Saldo Kas',             icon: Ico.cash,      show: isFinance },
     { key: 'signature', label: 'Tanda Tangan Saya',      icon: Ico.signature, show: true },
     { key: 'admin',     label: 'Admin Panel',           icon: Ico.admin,     show: profile.role === 'admin', accent: true },
   ].filter((n) => n.show)
@@ -2176,6 +2332,7 @@ export default function App() {
             {tab === 'mine'      && <MyRequests profile={profile} refreshKey={refreshKey} onRefresh={bump} />}
             {tab === 'approval'  && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
             {tab === 'finance'   && isFinance  && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
+            {tab === 'cash'      && isFinance  && <CashBalance profile={profile} refreshKey={refreshKey} onActed={bump} />}
             {tab === 'admin'     && profile.role === 'admin' && <AdminPanel />}
             {tab === 'signature' && <MyProfile profile={profile} onUpdated={loadProfile} />}
           </div>
