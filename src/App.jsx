@@ -2517,14 +2517,14 @@ const Ico = {
 }
 
 const PAGE_TITLE = {
-  dashboard: 'Dashboard',
-  submit:    'Submit Reimbursement',
-  mine:      'Pengajuan Saya',
-  approval:  'Approval',
-  finance:   'Finance Verification',
-  cash:      'Saldo Kas',
-  admin:     'Admin Panel',
-  signature: 'Tanda Tangan Saya',
+  dashboard:              'Dashboard',
+  'submit-reimbursement': 'Submit Reimbursement',
+  'submit-kas':           'Saldo Kas',
+  mine:                   'Pengajuan Saya',
+  approval:               'Approval',
+  finance:                'Finance Verification',
+  admin:                  'Admin Panel',
+  signature:              'Tanda Tangan Saya',
 }
 
 export default function App() {
@@ -2533,6 +2533,7 @@ export default function App() {
   const [tab, setTab]               = useState('dashboard')
   const [refreshKey, setRefreshKey] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [submitMenuOpen, setSubmitMenuOpen] = useState(true)
   const bump = useCallback(() => setRefreshKey((k) => k + 1), [])
 
   useEffect(() => {
@@ -2572,8 +2573,13 @@ export default function App() {
 
   const navItems = [
     { key: 'dashboard', label: 'Dashboard',             icon: Ico.dashboard, show: true },
-    { key: 'cash',      label: 'Saldo Kas',             icon: Ico.cash,      show: isFinance },
-    { key: 'submit',    label: 'Submit Reimbursement',  icon: Ico.submit,    show: true },
+    {
+      key: 'submit', label: 'Submit', icon: Ico.submit, show: true,
+      children: [
+        { key: 'submit-reimbursement', label: 'Submit Reimbursement', show: true },
+        { key: 'submit-kas',           label: 'Submit Kas',           show: isFinance },
+      ].filter((c) => c.show),
+    },
     { key: 'mine',      label: 'Pengajuan Saya',        icon: Ico.mine,      show: true },
     { key: 'approval',  label: 'Approval',              icon: Ico.approval,  show: isApprover },
     { key: 'finance',   label: 'Finance Verification',  icon: Ico.finance,   show: isFinance },
@@ -2599,17 +2605,48 @@ export default function App() {
 
         {/* Nav */}
         <nav className="sidebar-nav">
-          {navItems.map((n) => (
-            <button
-              key={n.key}
-              className={`nav-item ${tab === n.key ? 'active' : ''} ${n.accent ? 'accent' : ''}`}
-              onClick={() => navigate(n.key)}
-            >
-              <span className="nav-icon">{n.icon}</span>
-              <span className="nav-label">{n.label}</span>
-              {tab === n.key && <span className="nav-active-bar" />}
-            </button>
-          ))}
+          {navItems.map((n) => {
+            if (n.children) {
+              const groupActive = n.children.some((c) => c.key === tab)
+              return (
+                <div key={n.key} className="nav-group">
+                  <button
+                    className={`nav-item nav-item-parent ${groupActive ? 'active' : ''}`}
+                    onClick={() => setSubmitMenuOpen((o) => !o)}
+                  >
+                    <span className="nav-icon">{n.icon}</span>
+                    <span className="nav-label">{n.label}</span>
+                    <span className={`nav-chevron ${submitMenuOpen ? 'open' : ''}`}>&#9662;</span>
+                  </button>
+                  {submitMenuOpen && (
+                    <div className="nav-submenu">
+                      {n.children.map((c) => (
+                        <button
+                          key={c.key}
+                          className={`nav-subitem ${tab === c.key ? 'active' : ''}`}
+                          onClick={() => navigate(c.key)}
+                        >
+                          <span className="nav-label">{c.label}</span>
+                          {tab === c.key && <span className="nav-active-bar" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            }
+            return (
+              <button
+                key={n.key}
+                className={`nav-item ${tab === n.key ? 'active' : ''} ${n.accent ? 'accent' : ''}`}
+                onClick={() => navigate(n.key)}
+              >
+                <span className="nav-icon">{n.icon}</span>
+                <span className="nav-label">{n.label}</span>
+                {tab === n.key && <span className="nav-active-bar" />}
+              </button>
+            )
+          })}
         </nav>
 
         {/* User info + logout */}
@@ -2651,13 +2688,13 @@ export default function App() {
 
         <div className="content-area">
           <div className="tab-content" key={tab}>
-            {tab === 'dashboard' && <Dashboard refreshKey={refreshKey} profile={profile} />}
-            {tab === 'submit'    && <SubmitForm profile={profile} onSubmitted={bump} />}
-            {tab === 'mine'      && <MyRequests profile={profile} refreshKey={refreshKey} onRefresh={bump} />}
-            {tab === 'approval'  && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
-            {tab === 'finance'   && isFinance  && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
-            {tab === 'cash'      && isFinance  && <CashBalance profile={profile} refreshKey={refreshKey} onActed={bump} />}
-            {tab === 'admin'     && profile.role === 'admin' && <AdminPanel />}
+            {tab === 'dashboard'              && <Dashboard refreshKey={refreshKey} profile={profile} />}
+            {tab === 'submit-reimbursement'   && <SubmitForm profile={profile} onSubmitted={bump} />}
+            {tab === 'submit-kas'             && isFinance  && <CashBalance profile={profile} refreshKey={refreshKey} onActed={bump} />}
+            {tab === 'mine'                   && <MyRequests profile={profile} refreshKey={refreshKey} onRefresh={bump} />}
+            {tab === 'approval'               && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
+            {tab === 'finance'                && isFinance  && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
+            {tab === 'admin'                  && profile.role === 'admin' && <AdminPanel />}
             {tab === 'signature' && <MyProfile profile={profile} onUpdated={loadProfile} />}
           </div>
         </div>
