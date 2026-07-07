@@ -229,6 +229,9 @@ body {
 
 .mobile-header { display: none; }
 
+/* Bottom nav is a mobile-only construct; hidden by default (desktop) */
+.bottom-nav { display: none; }
+
 .page-header {
   padding: 20px 28px 0;
   display: flex;
@@ -1049,15 +1052,9 @@ tbody tr:hover .badge {
 @media (max-width: 768px) {
   :root { --sidebar-w: 260px; }
 
-  /* Sidebar hidden by default, slides in */
-  .sidebar {
-    transform: translateX(-100%);
-    box-shadow: none;
-  }
-  .sidebar-open .sidebar {
-    transform: translateX(0);
-    box-shadow: 4px 0 32px rgba(0,0,0,0.25);
-  }
+  /* Sidebar (desktop drawer) is replaced by the bottom nav on mobile */
+  .sidebar { display: none; }
+  .sidebar-overlay { display: none !important; }
 
   /* Main takes full width */
   .main-content { margin-left: 0; }
@@ -1075,6 +1072,8 @@ tbody tr:hover .badge {
     z-index: 10;
     box-shadow: 0 1px 4px rgba(0,0,0,0.06);
   }
+  /* Hamburger no longer needed: full nav lives in the bottom bar */
+  .mobile-header .hamburger { visibility: hidden; }
   .mobile-title {
     font-size: 15px;
     font-weight: 700;
@@ -1084,8 +1083,8 @@ tbody tr:hover .badge {
   /* Hide desktop page header on mobile */
   .page-header { display: none; }
 
-  /* Content area */
-  .content-area { padding: 12px 14px 24px; }
+  /* Content area — extra bottom padding so content clears the fixed bottom nav */
+  .content-area { padding: 12px 14px calc(78px + env(safe-area-inset-bottom)); }
 
   .grid-kpi { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .kpi-box { padding: 12px; }
@@ -1142,6 +1141,97 @@ tbody tr:hover .badge {
   .bulk-bar { flex-direction: column; align-items: flex-start; }
   .bulk-actions { width: 100%; }
   .bulk-note-input { width: 100%; }
+
+  /* ---- Bottom navigation (mobile) ----
+     Fixed/"freeze" at the bottom of the viewport, laid out horizontally.
+     The bar itself never moves as the page content scrolls; it only
+     scrolls sideways on its own if there are more items than fit. */
+  .bottom-nav {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 250;
+    background: var(--navy);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: 0 -2px 16px rgba(0,0,0,0.18);
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+  }
+  .bottom-nav::-webkit-scrollbar { display: none; }
+
+  .bottom-nav-item {
+    flex: 1 0 auto;
+    min-width: 66px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    border-radius: 10px;
+    color: rgba(255,255,255,0.55);
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 1.1;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, color 0.15s;
+  }
+  .bottom-nav-item.active {
+    color: #fff;
+    background: rgba(15,110,110,0.4);
+  }
+  .bottom-nav-item.accent { color: rgba(253,121,168,0.75); }
+  .bottom-nav-item.accent.active { color: #fd79a8; background: rgba(253,121,168,0.2); }
+  .bottom-nav-icon { display: flex; opacity: 0.85; }
+  .bottom-nav-item.active .bottom-nav-icon { opacity: 1; }
+  .bottom-nav-icon svg { width: 20px; height: 20px; }
+  .bottom-nav-label {
+    white-space: nowrap;
+    max-width: 74px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Submenu sheet, e.g. for the grouped "Submit" nav item */
+  .bottom-sheet-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 260;
+  }
+  .bottom-sheet {
+    position: fixed;
+    left: 10px; right: 10px;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    background: #fff;
+    z-index: 261;
+    border-radius: 14px;
+    padding: 8px;
+    box-shadow: 0 -6px 24px rgba(0,0,0,0.22);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    animation: slideUpMobile 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .bottom-sheet-item {
+    padding: 13px 14px;
+    border: none;
+    background: transparent;
+    text-align: left;
+    border-radius: 9px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .bottom-sheet-item.active { background: var(--teal-light); color: var(--teal); }
 }
 
 @media (max-width: 400px) {

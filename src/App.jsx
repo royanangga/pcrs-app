@@ -2534,6 +2534,7 @@ export default function App() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [submitMenuOpen, setSubmitMenuOpen] = useState(true)
+  const [mobileSubmitOpen, setMobileSubmitOpen] = useState(false)
   const bump = useCallback(() => setRefreshKey((k) => k + 1), [])
 
   useEffect(() => {
@@ -2569,6 +2570,7 @@ export default function App() {
   function navigate(key) {
     setTab(key)
     setSidebarOpen(false)
+    setMobileSubmitOpen(false)
   }
 
   const navItems = [
@@ -2668,6 +2670,53 @@ export default function App() {
 
       {/* Overlay (mobile only) */}
       <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
+
+      {/* ---- MOBILE BOTTOM NAV (freeze/fixed di bawah, horizontal) ---- */}
+      <nav className="bottom-nav">
+        {navItems.map((n) => {
+          if (n.children) {
+            const groupActive = n.children.some((c) => c.key === tab)
+            return (
+              <button
+                key={n.key}
+                className={`bottom-nav-item ${groupActive ? 'active' : ''}`}
+                onClick={() => setMobileSubmitOpen((o) => !o)}
+              >
+                <span className="bottom-nav-icon">{n.icon}</span>
+                <span className="bottom-nav-label">{n.label}</span>
+              </button>
+            )
+          }
+          return (
+            <button
+              key={n.key}
+              className={`bottom-nav-item ${tab === n.key ? 'active' : ''} ${n.accent ? 'accent' : ''}`}
+              onClick={() => navigate(n.key)}
+            >
+              <span className="bottom-nav-icon">{n.icon}</span>
+              <span className="bottom-nav-label">{n.label}</span>
+            </button>
+          )
+        })}
+      </nav>
+
+      {/* Sheet submenu mobile untuk grup "Submit" (dipicu dari bottom nav) */}
+      {mobileSubmitOpen && (
+        <>
+          <div className="bottom-sheet-overlay" onClick={() => setMobileSubmitOpen(false)} />
+          <div className="bottom-sheet">
+            {navItems.find((n) => n.children)?.children.map((c) => (
+              <button
+                key={c.key}
+                className={`bottom-sheet-item ${tab === c.key ? 'active' : ''}`}
+                onClick={() => navigate(c.key)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* ---- MAIN CONTENT ---- */}
       <div className="main-content">
