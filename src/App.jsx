@@ -1463,30 +1463,56 @@ function CashBalance({ profile, refreshKey, onActed }) {
 
   // Gabungkan kas masuk (topup) & kas keluar (reimbursement yang sudah
   // dicairkan/verified) jadi satu buku arus kas, urut tanggal naik, dengan
+  // Gabungkan kas masuk (topup) & kas keluar (reimbursement yang sudah
+  // dicairkan/verified) jadi satu buku arus kas, urut tanggal naik, dengan
   // saldo berjalan (running balance) yang dihitung dari SELURUH riwayat —
   // supaya saldo tetap akurat walau tabel sedang difilter per periode.
+  //
+  // PENTING soal tanggal: `topup_date` adalah kolom date murni (tanpa jam),
+  // sedangkan tanggal verifikasi reimbursement diambil dari `created_at`
+  // (timestamptz, tersimpan dalam UTC). Kalau tanggal UTC itu langsung
+  // dipotong mentah-mentah (mis. `.slice(0,10)`), transaksi yang terjadi
+  // dini hari WIB bisa "geser" tampil mundur sehari dibanding tanggal lokal
+  // sebenarnya — laporan jadi kelihatan tidak urut. Di bawah ini semua
+  // tanggal dikonversi dulu ke tanggal LOKAL (zona waktu browser/WIB)
+  // sebelum dipakai untuk ditampilkan maupun diurutkan, dan transaksi di
+  // hari yang sama diurutkan lagi berdasarkan jam pastinya (sortTie).
   const fullLedger = useMemo(() => {
-    const inEntries = topups.map((t) => ({
-      id: 'in-' + t.id,
-      date: t.topup_date,
-      sortTs: new Date(t.topup_date + 'T00:00:00').getTime(),
-      type: 'in',
-      description: t.note || 'Isi ulang kas',
-      ref: '—',
-      person: names[t.created_by] || '—',
-      amount: Number(t.amount) || 0,
-    }))
-    const outEntries = disbursements.map((d) => ({
-      id: 'out-' + d.id,
-      date: (d.created_at || '').slice(0, 10),
-      sortTs: new Date(d.created_at).getTime(),
-      type: 'out',
-      description: `Pencairan Reimbursement ${d.reimbursements?.request_no || ''}`,
-      ref: d.reimbursements?.request_no || '—',
-      person: names[d.reimbursements?.employee_id] || '—',
-      amount: Number(d.reimbursements?.total_amount) || 0,
-    }))
-    const merged = [...inEntries, ...outEntries].sort((a, b) => a.sortTs - b.sortTs)
+    const localDateOnly = (iso) => {
+      const d = new Date(iso)
+      const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
+    }
+
+    const inEntries = topups.map((t) => {
+      const dayTs = new Date(t.topup_date + 'T00:00:00').getTime()
+      return {
+        id: 'in-' + t.id,
+        date: t.topup_date,
+        sortTs: dayTs,
+        sortTie: t.created_at ? new Date(t.created_at).getTime() : dayTs,
+        type: 'in',
+        description: t.note || 'Isi ulang kas',
+        ref: '—',
+        person: names[t.created_by] || '—',
+        amount: Number(t.amount) || 0,
+      }
+    })
+    const outEntries = disbursements.map((d) => {
+      const localDate = localDateOnly(d.created_at)
+      return {
+        id: 'out-' + d.id,
+        date: localDate,
+        sortTs: new Date(localDate + 'T00:00:00').getTime(),
+        sortTie: new Date(d.created_at).getTime(),
+        type: 'out',
+        description: `Pencairan Reimbursement ${d.reimbursements?.request_no || ''}`,
+        ref: d.reimbursements?.request_no || '—',
+        person: names[d.reimbursements?.employee_id] || '—',
+        amount: Number(d.reimbursements?.total_amount) || 0,
+      }
+    })
+    const merged = [...inEntries, ...outEntries].sort((a, b) => (a.sortTs - b.sortTs) || (a.sortTie - b.sortTie))
     let running = 0
     return merged.map((e) => {
       running += e.type === 'in' ? e.amount : -e.amount
@@ -1507,7 +1533,7 @@ function CashBalance({ profile, refreshKey, onActed }) {
       if (dateFrom && e.date < dateFrom) return false
       if (dateTo && e.date > dateTo) return false
       return true
-    }).sort((a, b) => b.sortTs - a.sortTs) // tampilan: terbaru dulu
+    }).sort((a, b) => (b.sortTs - a.sortTs) || (b.sortTie - a.sortTie)) // tampilan: terbaru dulu
   }, [fullLedger, filterType, dateFrom, dateTo])
 
   const periodMasuk = filteredLedger.filter((e) => e.type === 'in').reduce((s, e) => s + e.amount, 0)
@@ -1575,7 +1601,7 @@ function CashBalance({ profile, refreshKey, onActed }) {
       headerRow.height = 22
 
       // tampilkan urut tanggal naik di file excel supaya enak dibaca sebagai laporan
-      const rowsAsc = [...filteredLedger].sort((a, b) => a.sortTs - b.sortTs)
+      const rowsAsc = [...filteredLedger].sort((a, b) => (a.sortTs - b.sortTs) || (a.sortTie - b.sortTie))
       rowsAsc.forEach((e, idx) => {
         const row = ws.getRow(5 + idx)
         row.getCell(1).value = idx + 1
@@ -1631,7 +1657,7 @@ function CashBalance({ profile, refreshKey, onActed }) {
   function handleExportPdf() {
     if (filteredLedger.length === 0) return
     setExportingPdf(true)
-    const rowsAsc = [...filteredLedger].sort((a, b) => a.sortTs - b.sortTs)
+    const rowsAsc = [...filteredLedger].sort((a, b) => (a.sortTs - b.sortTs) || (a.sortTie - b.sortTie))
     const rowsHtml = rowsAsc.map((e, idx) => `
       <tr>
         <td style="text-align:center">${idx + 1}</td>
