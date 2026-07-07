@@ -398,6 +398,7 @@ function SubmitForm({ profile, onSubmitted }) {
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>
               Rekap Item Tagihan
             </div>
+            <div className="table-scroll">
             <table style={{ marginBottom: 0 }}>
               <thead>
                 <tr>
@@ -428,6 +429,7 @@ function SubmitForm({ profile, onSubmitted }) {
                 </tr>
               </tfoot>
             </table>
+            </div>
           </div>
 
           {/* File */}
@@ -455,6 +457,7 @@ function SubmitForm({ profile, onSubmitted }) {
 // ---------------------------------------------------------------- MY REQUESTS ----
 function SkeletonTable({ cols = 4, rows = 4 }) {
   return (
+    <div className="table-scroll">
     <table>
       <thead><tr>{Array(cols).fill(0).map((_, i) => <th key={i}><div className="skeleton-row short" /></th>)}</tr></thead>
       <tbody>
@@ -467,6 +470,7 @@ function SkeletonTable({ cols = 4, rows = 4 }) {
         ))}
       </tbody>
     </table>
+    </div>
   )
 }
 
@@ -635,6 +639,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
       ) : filtered.length === 0 ? (
         <div className="empty-state">Tidak ada pengajuan yang cocok dengan pencarian "{search}".</div>
       ) : (
+        <div className="table-scroll">
         <table>
           <thead>
             <tr><th>No. Request</th><th>Tanggal</th><th>Total</th><th>Status</th><th></th></tr>
@@ -757,6 +762,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       {!loadingData && filtered.length > 0 && (
@@ -1033,6 +1039,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
         {rows.length === 0 ? (
           <div className="empty-state">Tidak ada pengajuan yang menunggu approval Anda saat ini.</div>
         ) : (
+          <div className="table-scroll">
           <table>
             <thead>
               <tr>
@@ -1093,6 +1100,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -1289,6 +1297,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
       {rows.length === 0 && !loadError ? (
         <div className="empty-state">Tidak ada pengajuan yang menunggu verifikasi finance.</div>
       ) : (
+        <div className="table-scroll">
         <table>
           <thead>
             <tr><th>No. Request</th><th>Employee</th><th>Total</th><th>Bukti & Catatan</th><th>Aksi</th></tr>
@@ -1347,6 +1356,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       {/* ---- Pop-up konfirmasi verifikasi / kembalikan ---- */}
@@ -1820,6 +1830,7 @@ function CashBalance({ profile, refreshKey, onActed }) {
         {filteredLedger.length === 0 && !loadError ? (
           <div className="empty-state">Tidak ada transaksi yang cocok dengan filter.</div>
         ) : (
+          <div className="table-scroll">
           <table>
             <thead>
               <tr><th>Tanggal</th><th>Keterangan</th><th>No. Ref</th><th>Terkait</th><th>Kas Masuk</th><th>Kas Keluar</th><th>Saldo</th></tr>
@@ -1838,6 +1849,7 @@ function CashBalance({ profile, refreshKey, onActed }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -2440,6 +2452,7 @@ function Dashboard({ refreshKey, profile }) {
         {loadingData ? <SkeletonTable cols={6} rows={5} /> : filtered.length === 0 ? (
           <div className="empty-state">Tidak ada data yang cocok dengan filter.</div>
         ) : (
+          <div className="table-scroll">
           <table>
             <thead>
               <tr>
@@ -2490,6 +2503,7 @@ function Dashboard({ refreshKey, profile }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
 
         {!loadingData && filtered.length > 0 && (

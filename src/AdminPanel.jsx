@@ -272,6 +272,7 @@ function AdminUsers() {
         <button className="btn btn-danger btn-sm" onClick={bulkDeleteUsers} disabled={loading}>🗑 Hapus Terpilih</button>
       </BulkBar>
 
+      <div className="table-scroll">
       <table style={{ marginTop: 12 }}>
         <thead>
           <tr>
@@ -320,6 +321,7 @@ function AdminUsers() {
           )}
         </tbody>
       </table>
+      </div>
 
       <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={users.length} />
 
@@ -486,6 +488,7 @@ function AdminTransactions() {
         <button className="btn btn-danger btn-sm" onClick={bulkDeleteTransactions}>🗑 Hapus Terpilih</button>
       </BulkBar>
 
+      <div className="table-scroll">
       <table>
         <thead>
           <tr>
@@ -540,6 +543,7 @@ function AdminTransactions() {
                       {(items[r.id] || []).length === 0 ? (
                         <div className="checklist-line">Tidak ada item.</div>
                       ) : (
+                        <div className="table-scroll">
                         <table style={{ marginTop: 6 }}>
                           <thead><tr><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th>Nominal</th><th></th></tr></thead>
                           <tbody>
@@ -554,6 +558,7 @@ function AdminTransactions() {
                             ))}
                           </tbody>
                         </table>
+                        </div>
                       )}
                     </div>
                   </td>
@@ -566,6 +571,7 @@ function AdminTransactions() {
           )}
         </tbody>
       </table>
+      </div>
 
       <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={rows.length} />
     </div>
@@ -658,6 +664,7 @@ function AdminHistory() {
         <button className="btn btn-danger btn-sm" onClick={bulkDeleteHistory}>🗑 Hapus Terpilih</button>
       </BulkBar>
 
+      <div className="table-scroll">
       <table>
         <thead>
           <tr>
@@ -684,6 +691,7 @@ function AdminHistory() {
           )}
         </tbody>
       </table>
+      </div>
 
       <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={rows.length} />
     </div>

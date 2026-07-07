@@ -16,8 +16,13 @@
 
 * { box-sizing: border-box; }
 
-body {
+html, body {
   margin: 0;
+  max-width: 100%;
+  overflow-x: hidden; /* never let a stray wide element force page-level zoom/scroll */
+}
+
+body {
   background: var(--bg);
   color: var(--text);
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -317,6 +322,30 @@ body {
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); }
 th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+
+/* ---- Table scroll wrapper ----
+   Every <table> is wrapped in this. It keeps horizontal overflow
+   contained to the table itself (with a nice swipe-to-scroll feel on
+   touch devices) instead of letting it blow out the page width, which
+   is what forces pinch-zooming on mobile. Fade edges hint that there's
+   more to scroll, and hide themselves automatically once you've
+   scrolled all the way. */
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius);
+  background:
+    linear-gradient(to right, var(--card) 30%, rgba(255,255,255,0)),
+    linear-gradient(to right, rgba(255,255,255,0), var(--card) 70%) 100% 0,
+    linear-gradient(to right, rgba(20,33,61,0.10), rgba(20,33,61,0)),
+    linear-gradient(to left, rgba(20,33,61,0.10), rgba(20,33,61,0)) 100% 0;
+  background-repeat: no-repeat;
+  background-color: var(--card);
+  background-size: 24px 100%, 24px 100%, 10px 100%, 10px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+.table-scroll table { margin-bottom: 0; }
 
 .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
 .badge-draft { background: #eee; color: #555; }
@@ -1108,7 +1137,6 @@ tbody tr:hover .badge {
   .filter-field-date .date-range { flex-direction: column; gap: 6px; }
   .date-sep { display: none; }
 
-  .card { overflow-x: auto; }
   table { min-width: 520px; font-size: 12px; }
   th, td { padding: 8px 8px; }
 
