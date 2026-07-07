@@ -18,8 +18,6 @@
 
 html, body {
   margin: 0;
-  max-width: 100%;
-  overflow-x: hidden; /* never let a stray wide element force page-level zoom/scroll */
 }
 
 body {
@@ -34,6 +32,9 @@ body {
 .app-shell {
   display: flex;
   min-height: 100vh;
+  max-width: 100vw;
+  overflow-x: hidden; /* contain any stray wide element here instead of on html/body,
+                          which breaks position:fixed / sticky on iOS Safari */
 }
 
 /* ---- SIDEBAR ---- */
