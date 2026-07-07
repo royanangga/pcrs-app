@@ -2724,7 +2724,9 @@ export default function App() {
         <div className="mobile-header">
           <button className="hamburger" onClick={() => setSidebarOpen(true)}>{Ico.menu}</button>
           <div className="mobile-title">{PAGE_TITLE[tab]}</div>
-          <div style={{ width: 40 }} />
+          <button className="mobile-logout" onClick={() => supabase.auth.signOut()} title="Logout">
+            {Ico.logout}
+          </button>
         </div>
 
         {/* Page header (desktop) */}

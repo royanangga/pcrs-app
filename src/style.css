@@ -280,6 +280,15 @@ body {
   color: var(--text); display: flex; align-items: center; padding: 4px;
 }
 
+/* Mobile top-bar logout (sidebar footer is hidden on mobile, so this
+   is the only logout entry point on small screens) */
+.mobile-logout {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text-muted); display: flex; align-items: center; padding: 6px;
+  border-radius: 6px; transition: color 0.15s, background 0.15s;
+}
+.mobile-logout:hover { color: var(--danger); background: rgba(192,57,43,0.08); }
+
 .card {
   background: var(--card);
   border: 1px solid var(--border);
