@@ -1415,28 +1415,40 @@ function CashBalance({ profile, refreshKey, onActed }) {
     setLoadingData(true)
     setLoadError('')
 
-    const [topupRes, verifiedRes] = await Promise.all([
-      supabase.from('cash_topups').select('*').order('topup_date', { ascending: false }).order('created_at', { ascending: false }),
-      supabase.from('reimbursements').select('total_amount').eq('status', 'verified'),
-    ])
+    try {
+      const [topupRes, verifiedRes] = await Promise.all([
+        supabase.from('cash_topups').select('*').order('topup_date', { ascending: false }).order('created_at', { ascending: false }),
+        supabase.from('reimbursements').select('total_amount').eq('status', 'verified'),
+      ])
 
-    if (topupRes.error) {
-      setLoadError(topupRes.error.message)
+      if (topupRes.error) {
+        setLoadError(topupRes.error.message)
+        return
+      }
+      if (verifiedRes.error) {
+        console.error('Gagal memuat total dicairkan:', verifiedRes.error.message)
+      }
+
+      setTopups(topupRes.data || [])
+      setVerifiedTotal((verifiedRes.data || []).reduce((s, r) => s + Number(r.total_amount), 0))
+
+      const ids = [...new Set((topupRes.data || []).map((t) => t.created_by).filter(Boolean))]
+      if (ids.length) {
+        const { data: profs, error: profErr } = await supabase.from('profiles').select('id, full_name').in('id', ids)
+        if (profErr) {
+          console.error('Gagal memuat nama pengisi kas:', profErr.message)
+        } else {
+          const map = {}
+          ;(profs || []).forEach((p) => { map[p.id] = p.full_name })
+          setNames(map)
+        }
+      }
+    } catch (err) {
+      console.error('Gagal memuat data saldo kas:', err)
+      setLoadError(err?.message || 'Terjadi kesalahan tak terduga saat memuat data.')
+    } finally {
       setLoadingData(false)
-      return
     }
-
-    setTopups(topupRes.data || [])
-    setVerifiedTotal((verifiedRes.data || []).reduce((s, r) => s + Number(r.total_amount), 0))
-
-    const ids = [...new Set((topupRes.data || []).map((t) => t.created_by).filter(Boolean))]
-    if (ids.length) {
-      const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids)
-      const map = {}
-      (profs || []).forEach((p) => { map[p.id] = p.full_name })
-      setNames(map)
-    }
-    setLoadingData(false)
   }, [])
 
   useEffect(() => { load() }, [load, refreshKey])
