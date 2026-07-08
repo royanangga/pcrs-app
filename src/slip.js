@@ -290,3 +290,164 @@ export async function printSlipByRequestNo(supabase, requestNo, savePdf = false)
   if (!r) throw new Error('Pengajuan tidak ditemukan.')
   await printSlip(supabase, r, savePdf)
 }
+
+// ---------------------------------------------------------------- SLIP PENGISIAN KAS (CASH TOP-UP) ----
+// Slip untuk satu transaksi pengisian/isi ulang kas kecil (uang MASUK).
+// Sengaja dibuat sebagai dokumen & fungsi terpisah dari slip reimbursement
+// (uang KELUAR) — bukan cuma beda judul, tapi juga beda skema warna (hijau,
+// bukan navy) dan ada pita "↑ KAS MASUK" di pojok, supaya kalau kedua jenis
+// slip ini dicetak/diarsipkan bersamaan, orang bisa langsung membedakan
+// mana slip uang masuk dan mana slip uang keluar hanya dari sekilas pandang.
+function buildTopupSlipBody(t, creatorName, creatorSigUrl) {
+  const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
+  const printDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+  const inputDate = t.created_at
+    ? new Date(t.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '—'
+
+  return `
+<div class="header">
+  <div>
+    <div class="brand">PCRS <span>•</span> Petty Cash</div>
+    <div style="font-size:10px;color:#888;margin-top:2px">Petty Cash Reimbursement System</div>
+  </div>
+  <div class="doc-label">
+    <div class="title">Slip Pengisian Kas</div>
+    <div class="no">${t.topup_no || '—'}</div>
+  </div>
+</div>
+
+<hr class="thick"/>
+
+<div style="overflow:hidden;margin-bottom:8px">
+  <div class="sah">↑ KAS MASUK</div>
+  <div class="info-row">
+    <div class="info-col"><div class="lbl">Tanggal Pengisian</div><div class="val">${t.topup_date}</div></div>
+    <div class="info-col"><div class="lbl">Diinput Oleh</div><div class="val">${creatorName || '—'}</div></div>
+    <div class="info-col"><div class="lbl">Diinput Pada</div><div class="val">${inputDate}</div></div>
+    <div class="info-col"><div class="lbl">Tanggal Cetak</div><div class="val">${printDate}</div></div>
+  </div>
+</div>
+
+<hr class="thin"/>
+
+<table>
+  <thead>
+    <tr>
+      <th>Keterangan</th>
+      <th style="width:160px;text-align:right">Nominal</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>${t.note || 'Isi ulang kas kecil'}</td>
+      <td style="text-align:right">${rp(t.amount)}</td>
+    </tr>
+    <tr class="total-row">
+      <td style="padding:6px 8px">TOTAL KAS MASUK</td>
+      <td style="text-align:right;padding:6px 8px">${rp(t.amount)}</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="bottom">
+  <div style="font-size:9px;color:#888">Dokumen internal — bukti pengisian kas kecil, bukan bukti transfer bank.</div>
+  <div class="signs">
+    <div class="sign-box">
+      <div class="sign-space">
+        ${creatorSigUrl ? `<img class="sign-img" src="${creatorSigUrl}"/>` : ''}
+      </div>
+      <div class="sign-printed-name">${creatorName || '\u00A0'}</div>
+      <div class="sign-name">Diinput Oleh</div>
+      <div class="sign-role">(Finance)</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  Dicetak otomatis oleh PCRS &nbsp;•&nbsp; ${t.topup_no || ''} &nbsp;•&nbsp; ${new Date().toLocaleString('id-ID')}
+</div>`
+}
+
+// Wrapper HTML khusus slip pengisian kas — struktur sama dengan
+// wrapSlipsHtml (slip reimbursement) supaya class HTML tetap konsisten,
+// tapi warna aksen diganti hijau (bukan navy) sebagai pembeda visual utama
+// antara slip uang masuk (ini) dan slip uang keluar (reimbursement).
+function wrapTopupSlipHtml(bodies, savePdf, docTitle) {
+  return `<!DOCTYPE html>
+<html lang="id"><head>
+<meta charset="UTF-8"/>
+<title>${docTitle}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 12px; color: #111; }
+
+  .slip-page { padding: 28px 32px; page-break-after: always; border-top: 6px solid #1f8a4c; }
+  .slip-page:last-child { page-break-after: auto; }
+
+  .header { display: flex; justify-content: space-between; align-items: center; margin: 12px 0 6px; }
+  .brand { font-size: 20px; font-weight: 900; color: #14213d; }
+  .brand span { color: #1f8a4c; }
+  .doc-label { text-align: right; }
+  .doc-label .title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #1f8a4c; }
+  .doc-label .no { font-size: 15px; font-weight: 900; color: #14213d; }
+  hr.thick { border: none; border-top: 2.5px solid #1f8a4c; margin: 10px 0; }
+  hr.thin  { border: none; border-top: 1px solid #ccc; margin: 10px 0; }
+
+  .sah { display: inline-block; border: 2.5px solid #1f8a4c; background: #eaf7ee; color: #1f8a4c; font-size: 13px;
+    font-weight: 900; padding: 3px 14px; border-radius: 4px; letter-spacing: 2px;
+    transform: rotate(-4deg); float: right; margin-top: -4px; }
+
+  .info-row { display: flex; gap: 0; margin: 8px 0 12px; }
+  .info-col { flex: 1; }
+  .info-col .lbl { font-size: 10px; color: #666; font-weight: 700; text-transform: uppercase; }
+  .info-col .val { font-size: 12px; font-weight: 600; margin-top: 1px; }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+  thead th { background: #1f8a4c; color: #fff; padding: 6px 8px; font-size: 10px; text-transform: uppercase; text-align: left; }
+  tbody td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; font-size: 11px; }
+  .total-row td { font-weight: 700; font-size: 12px; background: #eaf7ee; border-top: 2px solid #1f8a4c; }
+
+  .bottom { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 20px; padding-top: 14px; border-top: 1px solid #e3e6ea; }
+  .signs { display: flex; gap: 20px; flex-wrap: wrap; justify-content: flex-end; }
+  .sign-box { text-align: center; min-width: 130px; }
+  .sign-space { height: 44px; border-bottom: 1px solid #333; margin-bottom: 3px; position: relative; }
+  .sign-img { max-height: 40px; max-width: 100%; position: absolute; bottom: 2px; left: 0; right: 0; margin: 0 auto; display: block; object-fit: contain; }
+  .sign-printed-name { font-size: 10px; font-weight: 700; text-align: center; color: #14213d; margin-bottom: 5px; min-height: 12px; }
+  .sign-name { font-size: 10px; font-weight: 700; }
+  .sign-role { font-size: 9px; color: #666; margin-top: 1px; }
+
+  .footer { margin-top: 14px; text-align: center; font-size: 9px; color: #aaa; border-top: 1px dashed #ddd; padding-top: 8px; }
+  @media print { @page { margin: 15mm; } }
+</style>
+</head><body>
+
+${bodies.map((b) => `<div class="slip-page">${b}</div>`).join('')}
+
+<div id="save-hint" style="display:none;margin:20px 32px;background:#f0faf4;border:1px solid #1f8a4c;border-radius:8px;padding:14px 18px;text-align:center;">
+  <div style="font-size:14px;font-weight:700;color:#14213d;margin-bottom:8px">📥 Simpan sebagai PDF</div>
+  <div style="font-size:12px;color:#444;margin-bottom:12px">Klik tombol di bawah, lalu pilih <strong>"Save as PDF"</strong> atau <strong>"Microsoft Print to PDF"</strong> sebagai printer.</div>
+  <button onclick="window.print()" style="background:#1f8a4c;color:#fff;border:none;border-radius:6px;padding:10px 28px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.3px">
+    📥 Simpan PDF Sekarang
+  </button>
+</div>
+
+<script>
+  window.onload = () => {
+    ${savePdf
+      ? `document.getElementById('save-hint').style.display='block';`
+      : `window.print();`
+    }
+  }
+</script>
+</body></html>`
+}
+
+// Cetak slip untuk satu transaksi pengisian kas. `t` harus punya field
+// topup_no, topup_date, amount, note, created_at. `creatorName`/`creatorSigUrl`
+// diambil pemanggil dari tabel profiles berdasarkan `t.created_by`.
+export function printCashTopupSlip(t, creatorName, creatorSigUrl, savePdf = false) {
+  const body = buildTopupSlipBody(t, creatorName, creatorSigUrl)
+  const html = wrapTopupSlipHtml([body], savePdf, `Slip Pengisian Kas ${t.topup_no || ''}`)
+  openPrintWindow(html)
+}
