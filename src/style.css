@@ -962,11 +962,10 @@ input, select, textarea {
 
 /* ========== TABEL ROW ========== */
 tbody tr {
-  transition: background 0.13s ease, transform 0.13s ease;
+  transition: background 0.13s ease;
 }
 tbody tr:hover {
   background: #f0f4fa;
-  transform: translateX(2px);
 }
 
 /* ========== INPUT FOCUS ========== */
