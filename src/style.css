@@ -332,9 +332,13 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
    more to scroll, and hide themselves automatically once you've
    scrolled all the way. */
 .table-scroll {
+  width: 100%;
   max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain; /* swiping the table never bubbles into a page-level scroll */
+  touch-action: pan-x;            /* dragging inside the panel only ever pans this panel, sideways */
   border-radius: var(--radius);
   background:
     linear-gradient(to right, var(--card) 30%, rgba(255,255,255,0)),
@@ -1138,8 +1142,29 @@ tbody tr:hover .badge {
   .filter-field-date .date-range { flex-direction: column; gap: 6px; }
   .date-sep { display: none; }
 
-  table { min-width: 520px; font-size: 12px; }
-  th, td { padding: 8px 8px; }
+  /* ---- Compact / minimized table look on mobile ----
+     Smaller type, tighter padding, smaller badges & buttons so more
+     columns are visible before the user needs to scroll the table. */
+  .table-scroll { border: 1px solid var(--border); }
+  table { min-width: 460px; font-size: 11.5px; }
+
+  /* This nested table (row-detail panel inside AdminPanel) lives inside a
+     <td> of an already-wide, horizontally-scrolling table, so it would
+     otherwise inherit that table's width instead of the phone's. Cap it
+     to the real viewport so it always fits/scrolls on its own. */
+  .admin-items-box { max-width: calc(100vw - 64px); }
+  .admin-items-box .table-scroll { max-width: 100%; }
+  .admin-items-box table { min-width: 380px; }
+  th, td { padding: 6px 6px; }
+  th { font-size: 9.5px; letter-spacing: 0.2px; }
+  th[style*="width: 32"] { padding-left: 4px; padding-right: 4px; }
+
+  table .badge { font-size: 9.5px; padding: 2px 7px; }
+  table .btn, table .btn-sm { padding: 4px 7px; font-size: 10.5px; border-radius: 6px; }
+  table input[type="checkbox"] { width: 14px; height: 14px; }
+  table input[type="number"],
+  table select { font-size: 11px; padding: 4px 6px; }
+  .detail-toggle { font-size: 11px; }
 
   .item-row { grid-template-columns: 1fr 1fr; gap: 6px; }
   .item-row > div:nth-child(3) { grid-column: 1 / -1; }
@@ -1274,7 +1299,8 @@ tbody tr:hover .badge {
 
 @media (max-width: 400px) {
   .grid-kpi { grid-template-columns: 1fr; }
-  table { min-width: 440px; }
+  table { min-width: 400px; font-size: 11px; }
+  th, td { padding: 5px 5px; }
   .kpi-box .value { font-size: 16px; }
 }
 
