@@ -228,6 +228,9 @@ body {
 .main-content {
   margin-left: var(--sidebar-w);
   flex: 1;
+  min-width: 0; /* flex items default to min-width:auto, which is based on the
+                   widest descendant (e.g. a table) and defeats .table-scroll's
+                   own overflow handling — this lets it actually shrink to fit */
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -257,7 +260,7 @@ body {
   letter-spacing: 0.3px;
 }
 
-.content-area { padding: 18px 28px 32px; }
+.content-area { padding: 18px 28px 32px; min-width: 0; width: 100%; }
 
 /* Legacy container still used by some components */
 .container { padding: 0; }
