@@ -331,9 +331,17 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
    Every <table> is wrapped in this. It keeps horizontal overflow
    contained to the table itself (with a nice swipe-to-scroll feel on
    touch devices) instead of letting it blow out the page width, which
-   is what forces pinch-zooming on mobile. Fade edges hint that there's
-   more to scroll, and hide themselves automatically once you've
-   scrolled all the way. */
+   is what forces pinch-zooming on mobile. The inset shadow on both
+   edges hints that there's more content to scroll to.
+
+   NOTE: this used to use a 4-layer `background` with mixed
+   `background-attachment: local/scroll` to fade the shadows out once
+   you'd scrolled all the way to that edge. That trick forces the
+   browser to repaint the background on every single scroll frame,
+   which showed up as visible jitter/shaking while scrolling — so it's
+   been replaced with a plain `box-shadow`, which is composited (not
+   repainted) and stays perfectly smooth. Trade-off: the edge shadow no
+   longer disappears at the very start/end of the scroll range. */
 .table-scroll {
   width: 100%;
   max-width: 100%;
@@ -343,15 +351,8 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
   overscroll-behavior-x: contain; /* swiping the table never bubbles into a page-level scroll */
   touch-action: pan-x;            /* dragging inside the panel only ever pans this panel, sideways */
   border-radius: var(--radius);
-  background:
-    linear-gradient(to right, var(--card) 30%, rgba(255,255,255,0)),
-    linear-gradient(to right, rgba(255,255,255,0), var(--card) 70%) 100% 0,
-    linear-gradient(to right, rgba(20,33,61,0.10), rgba(20,33,61,0)),
-    linear-gradient(to left, rgba(20,33,61,0.10), rgba(20,33,61,0)) 100% 0;
-  background-repeat: no-repeat;
   background-color: var(--card);
-  background-size: 24px 100%, 24px 100%, 10px 100%, 10px 100%;
-  background-attachment: local, local, scroll, scroll;
+  box-shadow: inset 10px 0 8px -8px rgba(20,33,61,0.12), inset -10px 0 8px -8px rgba(20,33,61,0.12);
 }
 .table-scroll table { margin-bottom: 0; }
 
