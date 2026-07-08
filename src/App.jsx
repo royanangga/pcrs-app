@@ -788,6 +788,8 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
   const [confirm, setConfirm] = useState(null)         // single: { row, action }
   const [bulkConfirm, setBulkConfirm] = useState(null) // bulk: { action }
   const [processing, setProcessing] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   // Admin: lintas departemen (tidak dibatasi department pengaju).
   // Supervisor & Manager (termasuk yang di department Finance) hanya melihat
@@ -957,6 +959,14 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
     setSelected(allSelected ? [] : rows.map((r) => r.id))
   }
 
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
+
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return rows.slice(start, start + pageSize)
+  }, [rows, page, pageSize])
+
   // ---- Bulk confirm action ----
   async function confirmBulkAct() {
     const { action } = bulkConfirm
@@ -1056,7 +1066,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {pageRows.map((r) => (
                 <tr key={r.id} className={selected.includes(r.id) ? 'row-selected' : ''}>
                   <td>
                     <input
@@ -1101,6 +1111,10 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
             </tbody>
           </table>
           </div>
+        )}
+
+        {rows.length > 0 && (
+          <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={rows.length} />
         )}
       </div>
 
@@ -1216,6 +1230,8 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
   const [dateError, setDateError] = useState('')
   const [processing, setProcessing] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   useEffect(() => {
     async function load() {
@@ -1237,6 +1253,16 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
     }
     load()
   }, [refreshKey])
+
+  useEffect(() => { setPage(1) }, [refreshKey])
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
+
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return rows.slice(start, start + pageSize)
+  }, [rows, page, pageSize])
 
   async function toggleOpen(id) {
     if (openId === id) { setOpenId(null); return }
@@ -1318,7 +1344,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
             <tr><th>No. Request</th><th>Employee</th><th>Total</th><th>Bukti & Catatan</th><th>Aksi</th></tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {pageRows.map((r) => (
               <React.Fragment key={r.id}>
                 <tr>
                   <td>{r.request_no}</td>
@@ -1372,6 +1398,10 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
           </tbody>
         </table>
         </div>
+      )}
+
+      {rows.length > 0 && (
+        <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={rows.length} />
       )}
 
       {/* ---- Pop-up konfirmasi verifikasi / kembalikan ---- */}
@@ -1618,6 +1648,8 @@ function CashFlowReport({ profile, refreshKey }) {
   const [dateTo, setDateTo] = useState('')
   const [exportingExcel, setExportingExcel] = useState(false)
   const [exportingPdf, setExportingPdf] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const load = useCallback(async () => {
     setLoadingData(true)
@@ -1741,6 +1773,19 @@ function CashFlowReport({ profile, refreshKey }) {
   const periodMasuk = filteredLedger.filter((e) => e.type === 'in').reduce((s, e) => s + e.amount, 0)
   const periodKeluar = filteredLedger.filter((e) => e.type === 'out').reduce((s, e) => s + e.amount, 0)
   const hasActiveFilter = filterType !== 'all' || dateFrom || dateTo
+
+  useEffect(() => { setPage(1) }, [filterType, dateFrom, dateTo])
+
+  const totalPages = Math.max(1, Math.ceil(filteredLedger.length / pageSize))
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
+
+  // Halaman yang sedang ditampilkan di tabel. Export Excel/PDF tetap pakai
+  // `filteredLedger` (SELURUH data yang lolos filter), bukan `pageLedger` —
+  // supaya export tidak ikut kepotong ke satu halaman saja.
+  const pageLedger = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filteredLedger.slice(start, start + pageSize)
+  }, [filteredLedger, page, pageSize])
 
   function resetFilters() { setFilterType('all'); setDateFrom(''); setDateTo('') }
 
@@ -1967,7 +2012,7 @@ function CashFlowReport({ profile, refreshKey }) {
               <tr><th>Tanggal</th><th>Keterangan</th><th>No. Ref</th><th>Terkait</th><th>Kas Masuk</th><th>Kas Keluar</th><th>Saldo</th></tr>
             </thead>
             <tbody>
-              {filteredLedger.map((e) => (
+              {pageLedger.map((e) => (
                 <tr key={e.id}>
                   <td>{e.date}</td>
                   <td>{e.description}</td>
@@ -1981,6 +2026,10 @@ function CashFlowReport({ profile, refreshKey }) {
             </tbody>
           </table>
           </div>
+        )}
+
+        {filteredLedger.length > 0 && (
+          <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={filteredLedger.length} />
         )}
       </div>
     </>
