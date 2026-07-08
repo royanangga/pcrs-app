@@ -1212,6 +1212,8 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
   const [attMap, setAttMap] = useState({})
   const [noteDraft, setNoteDraft] = useState({})
   const [confirm, setConfirm] = useState(null)   // { row, action }
+  const [disbursedDate, setDisbursedDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [dateError, setDateError] = useState('')
   const [processing, setProcessing] = useState(false)
   const [loadError, setLoadError] = useState('')
 
@@ -1246,11 +1248,18 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
   }
 
   function requestAct(row, action) {
+    setDisbursedDate(new Date().toISOString().slice(0, 10))
+    setDateError('')
     setConfirm({ row, action })
   }
 
   async function confirmAct() {
     const { row, action } = confirm
+    if (action === 'verified' && !disbursedDate) {
+      setDateError('Tanggal pencairan dana wajib diisi.')
+      return
+    }
+    setDateError('')
     setProcessing(true)
     const newStatus = action === 'verified' ? 'verified' : 'revision'
     const { error: updErr } = await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
@@ -1264,6 +1273,12 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
       approver_id: profile.id,
       action: newStatus,
       notes: noteDraft[row.id] || (action === 'verified' ? 'Dana sudah dicairkan / dibayarkan' : null),
+      // Tanggal aktual dana dicairkan (diisi manual oleh Finance saat
+      // verifikasi) — INI yang dipakai sebagai tanggal transaksi "Kas
+      // Keluar" di Laporan Arus Kas, BUKAN created_at (jam sistem saat
+      // tombol Verifikasi diklik, yang bisa beda hari dengan tanggal dana
+      // sungguh-sungguh ditransfer ke pengaju).
+      disbursed_date: action === 'verified' ? disbursedDate : null,
     })
     setProcessing(false)
     if (histErr) {
@@ -1378,6 +1393,23 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
               )}
             </div>
 
+            {confirm.action === 'verified' && (
+              <div style={{ textAlign: 'left', marginTop: 10, marginBottom: 4 }}>
+                <label style={{ fontSize: 13, fontWeight: 600 }}>Tanggal Dana Dicairkan</label>
+                <input
+                  type="date"
+                  value={disbursedDate}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => { setDisbursedDate(e.target.value); setDateError('') }}
+                  required
+                />
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                  Tanggal ini akan dipakai sebagai tanggal transaksi "Kas Keluar" di Laporan Arus Kas.
+                </div>
+                {dateError && <div className="empty-state" style={{ color: 'var(--danger)', padding: 0, marginTop: 6 }}>{dateError}</div>}
+              </div>
+            )}
+
             <div className="confirm-actions">
               <button
                 className="btn"
@@ -1391,7 +1423,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
                 className="btn"
                 style={{ background: VERIFY_ACTION_META[confirm.action].color, color: '#fff', flex: 1 }}
                 onClick={confirmAct}
-                disabled={processing}
+                disabled={processing || (confirm.action === 'verified' && !disbursedDate)}
               >
                 {processing ? <><span className="spinner" />Memproses...</> : `Ya, ${VERIFY_ACTION_META[confirm.action].label}`}
               </button>
@@ -1596,7 +1628,7 @@ function CashFlowReport({ profile, refreshKey }) {
         supabase.from('cash_topups').select('*'),
         supabase
           .from('approval_history')
-          .select('id, created_at, reimbursement_id, reimbursements(request_no, employee_id, total_amount, status)')
+          .select('id, created_at, disbursed_date, reimbursement_id, reimbursements(request_no, employee_id, total_amount, status)')
           .eq('action', 'verified'),
       ])
 
@@ -1666,7 +1698,10 @@ function CashFlowReport({ profile, refreshKey }) {
       }
     })
     const outEntries = disbursements.map((d) => {
-      const localDate = localDateOnly(d.created_at)
+      // Utamakan `disbursed_date` (tanggal aktual dana dicairkan, diisi
+      // manual oleh Finance saat verifikasi). Fallback ke `created_at`
+      // hanya untuk data lama (sebelum field ini ada).
+      const localDate = d.disbursed_date || localDateOnly(d.created_at)
       return {
         id: 'out-' + d.id,
         date: localDate,
