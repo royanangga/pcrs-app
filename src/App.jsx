@@ -1478,6 +1478,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
 function CashBalance({ profile, refreshKey, onActed }) {
   const [topups, setTopups] = useState([])
   const [disbursements, setDisbursements] = useState([]) // dipakai untuk hitung saldo berjalan saja
+  const [names, setNames] = useState({}) // id -> full_name, untuk kolom "Diinput Oleh" di tabel riwayat
   const [loadingData, setLoadingData] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -1487,6 +1488,9 @@ function CashBalance({ profile, refreshKey, onActed }) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
+  const [exportingPdf, setExportingPdf] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const load = useCallback(async () => {
     setLoadingData(true)
@@ -1506,6 +1510,20 @@ function CashBalance({ profile, refreshKey, onActed }) {
 
       setTopups(topupRes.data || [])
       setDisbursements((disbRes.data || []).filter((d) => d.reimbursements))
+
+      // Ambil nama-nama user yang menginput pengisian kas, untuk ditampilkan
+      // di kolom "Diinput Oleh" pada tabel riwayat pengisian kas.
+      const ids = [...new Set((topupRes.data || []).map((t) => t.created_by).filter(Boolean))]
+      if (ids.length) {
+        const { data: profs, error: profErr } = await supabase.from('profiles').select('id, full_name').in('id', ids)
+        if (profErr) {
+          console.error('Gagal memuat nama:', profErr.message)
+        } else {
+          const map = {}
+          ;(profs || []).forEach((p) => { map[p.id] = p.full_name })
+          setNames(map)
+        }
+      }
     } catch (err) {
       console.error('Gagal memuat data saldo kas:', err)
       setLoadError(err?.message || 'Terjadi kesalahan tak terduga saat memuat data.')
@@ -1515,6 +1533,75 @@ function CashBalance({ profile, refreshKey, onActed }) {
   }, [])
 
   useEffect(() => { load() }, [load, refreshKey])
+
+  // Riwayat pengisian kas, urut terbaru dulu untuk ditampilkan di tabel.
+  const topupHistory = useMemo(() => {
+    return [...topups].sort((a, b) => {
+      const ta = new Date(a.topup_date + 'T00:00:00').getTime()
+      const tb = new Date(b.topup_date + 'T00:00:00').getTime()
+      if (tb !== ta) return tb - ta
+      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    })
+  }, [topups])
+
+  useEffect(() => { setPage(1) }, [topups.length])
+  const totalPages = Math.max(1, Math.ceil(topupHistory.length / pageSize))
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
+  const pageTopups = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return topupHistory.slice(start, start + pageSize)
+  }, [topupHistory, page, pageSize])
+
+  // ---- Export PDF: buka jendela print berisi slip pengisian kas (seluruh
+  // riwayat), lalu user pilih "Save as PDF" di dialog print browser — pola
+  // yang sama dipakai untuk cetak slip reimbursement di slip.js dan laporan
+  // arus kas di CashFlowReport. ----
+  function handleExportPdf() {
+    if (topupHistory.length === 0) return
+    setExportingPdf(true)
+    const totalNominal = topupHistory.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+    const rowsHtml = topupHistory.map((t, idx) => `
+      <tr>
+        <td style="text-align:center">${idx + 1}</td>
+        <td>${t.topup_date}</td>
+        <td style="text-align:right">${rupiah(Number(t.amount) || 0)}</td>
+        <td>${t.note || '—'}</td>
+        <td>${names[t.created_by] || '—'}</td>
+      </tr>`).join('')
+
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Slip Pengisian Kas</title>
+    <style>
+      * { box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; }
+      body { margin: 24px; color: #14213d; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      .sub { font-size: 11px; color: #666; margin-bottom: 16px; }
+      table { width: 100%; border-collapse: collapse; }
+      thead th { background: #14213d; color: #fff; padding: 6px 8px; font-size: 10px; text-transform: uppercase; text-align: left; }
+      tbody td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; font-size: 11px; }
+      tfoot td { padding: 8px; font-size: 12px; font-weight: 700; border-top: 2px solid #14213d; }
+      @media print { @page { margin: 15mm; } }
+    </style></head><body>
+      <h1>Slip Pengisian Kas Kecil</h1>
+      <div class="sub">Diekspor: ${new Date().toLocaleString('id-ID')} &nbsp;|&nbsp; ${topupHistory.length} transaksi pengisian</div>
+      <table>
+        <thead><tr><th style="width:32px">No</th><th style="width:100px">Tanggal</th><th style="width:140px;text-align:right">Nominal</th><th>Catatan</th><th style="width:150px">Diinput Oleh</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+        <tfoot><tr>
+          <td colspan="2" style="text-align:right">Total Pengisian</td>
+          <td style="text-align:right">${rupiah(totalNominal)}</td>
+          <td colspan="2"></td>
+        </tr></tfoot>
+      </table>
+      <script>
+        window.onload = () => { window.print(); }
+      </script>
+    </body></html>`
+
+    const w = window.open('', '_blank', 'width=1000,height=700')
+    w.document.write(html)
+    w.document.close()
+    setExportingPdf(false)
+  }
 
   const totalTopup = topups.reduce((s, t) => s + Number(t.amount), 0)
   const verifiedTotal = disbursements.reduce((s, d) => s + Number(d.reimbursements?.total_amount || 0), 0)
@@ -1599,6 +1686,52 @@ function CashBalance({ profile, refreshKey, onActed }) {
             Tambah Saldo
           </button>
         </form>
+      </div>
+
+      {/* ---- Tabel Riwayat Pengisian Kas + Export PDF ---- */}
+      <div className="card">
+        <h3>Riwayat Pengisian Kas ({topupHistory.length})</h3>
+
+        <div className="bulk-bar" style={{ marginBottom: 14 }}>
+          <span className="bulk-count">Total Pengisian: {rupiah(totalTopup)}</span>
+          <div className="bulk-actions">
+            <button
+              className="btn btn-sm"
+              style={{ background: '#14213d', color: '#fff' }}
+              disabled={exportingPdf || topupHistory.length === 0}
+              onClick={handleExportPdf}
+            >
+              {exportingPdf ? <><span className="spinner" />Menyiapkan...</> : '🖨 Export PDF Slip Pengisian Kas'}
+            </button>
+          </div>
+        </div>
+
+        {loadError && <div className="empty-state" style={{ color: 'var(--danger)' }}>Gagal memuat data: {loadError}</div>}
+        {topupHistory.length === 0 && !loadError ? (
+          <div className="empty-state">Belum ada riwayat pengisian kas.</div>
+        ) : (
+          <div className="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Tanggal</th><th style={{ textAlign: 'right' }}>Nominal</th><th>Catatan</th><th>Diinput Oleh</th></tr>
+            </thead>
+            <tbody>
+              {pageTopups.map((t) => (
+                <tr key={t.id}>
+                  <td>{t.topup_date}</td>
+                  <td style={{ textAlign: 'right', color: '#1f8a4c', fontWeight: 700 }}>{rupiah(Number(t.amount) || 0)}</td>
+                  <td>{t.note || '—'}</td>
+                  <td>{names[t.created_by] || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        )}
+
+        {topupHistory.length > 0 && (
+          <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={topupHistory.length} />
+        )}
       </div>
 
       {/* ---- Pop-up konfirmasi isi ulang saldo kas ---- */}

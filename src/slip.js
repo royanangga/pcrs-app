@@ -31,10 +31,17 @@ export function buildSlipBody(r, items, history, qrDataUrl) {
   // Ekstrak nama dari history berdasarkan role & urutan
   const hist = history || []
   const employeeName   = r.profiles?.full_name || '—'
+  const submittedRow   = hist.find((h) => h.action === 'submitted')
   const supervisorRow  = hist.find((h) => h.action === 'approved' && h.profiles?.role === 'supervisor')
   const managerRow     = hist.find((h) => h.action === 'approved' && h.profiles?.role === 'manager')
   const financeMgrRow  = hist.find((h) => h.action === 'finance_approved')
   const verifierRow    = hist.find((h) => h.action === 'verified')
+
+  // Format tanggal singkat (tanpa jam) untuk ditampilkan di bawah tiap kolom
+  // tanda tangan — dipakai sebagai pengganti tabel "Riwayat Approval".
+  const fmtDate = (iso) => iso
+    ? new Date(iso).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+    : null
 
   const supervisorName  = supervisorRow?.profiles?.full_name  || null
   const managerName     = managerRow?.profiles?.full_name     || null
@@ -56,28 +63,12 @@ export function buildSlipBody(r, items, history, qrDataUrl) {
         <td style="text-align:right">${rp(it.amount)}</td>
       </tr>`).join('')
 
-  // Riwayat approval — semua entri approval_history untuk pengajuan ini,
-  // diurutkan dari yang paling awal (Diajukan) sampai yang terakhir
-  // (Diverifikasi & Dicairkan), karena hist sudah di-order by created_at asc.
-  const historyRows = hist.map((h) => {
-    const dt = h.created_at
-      ? new Date(h.created_at).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-      : '—'
-    const actorName = h.profiles?.full_name || '—'
-    const actorRole = ROLE_LABEL[h.profiles?.role] || h.profiles?.role || '—'
-    const actionLabel = ACTION_LABEL[h.action] || h.action
-    return `
-      <tr>
-        <td>${dt}</td>
-        <td>${actorName}<br/><span style="color:#888;font-size:9px">${actorRole}</span></td>
-        <td><span class="hist-action hist-${h.action}">${actionLabel}</span></td>
-        <td>${h.notes || '—'}</td>
-      </tr>`
-  }).join('')
-
   // Kolom tanda tangan dinamis. Kalau orangnya sudah menyimpan tanda tangan digital,
   // gambar itu otomatis dipasang di atas nama (tidak perlu tanda tangan basah lagi).
-  const signBox = (label, role, name, sigUrl) => `
+  // Tanggal aksi (approval/verifikasi) ditampilkan langsung di bawah kolom
+  // tanda tangan masing-masing — menggantikan tabel "Riwayat Approval" yang
+  // sebelumnya ditampilkan terpisah.
+  const signBox = (label, role, name, sigUrl, actionLabel, dateStr) => `
       <div class="sign-box">
         <div class="sign-space">
           ${sigUrl ? `<img class="sign-img" src="${sigUrl}"/>` : ''}
@@ -85,6 +76,7 @@ export function buildSlipBody(r, items, history, qrDataUrl) {
         <div class="sign-printed-name">${name || '\u00A0'}</div>
         <div class="sign-name">${label}</div>
         <div class="sign-role">(${role})</div>
+        <div class="sign-date">${dateStr ? `${actionLabel}: ${dateStr}` : '\u00A0'}</div>
       </div>`
 
   // Hanya tampilkan kolom tanda tangan untuk tahap yang BENAR-BENAR dilalui
@@ -95,11 +87,11 @@ export function buildSlipBody(r, items, history, qrDataUrl) {
   // dirinya sendiri di-skip, atau pengaju Manager/Admin yang tanpa approval
   // departemen) tidak menampilkan kolom tanda tangan kosong yang tidak relevan.
   const signCols = [
-    signBox('Pembuat Pengajuan', 'Employee', employeeName, employeeSig),
-    ...(supervisorRow ? [signBox('Menyetujui Tahap 1', 'Supervisor', supervisorName, supervisorSig)] : []),
-    ...(managerRow    ? [signBox('Menyetujui Tahap 2', 'Manager', managerName, managerSig)] : []),
-    ...(financeMgrRow ? [signBox('Approval Finance Manager', 'Finance Manager', financeMgrName, financeMgrSig)] : []),
-    ...(verifierRow   ? [signBox('Verifikasi Pencairan', 'Finance', verifierName, verifierSig)] : []),
+    signBox('Pembuat Pengajuan', 'Employee', employeeName, employeeSig, 'Diajukan', fmtDate(submittedRow?.created_at) || r.request_date),
+    ...(supervisorRow ? [signBox('Menyetujui Tahap 1', 'Supervisor', supervisorName, supervisorSig, 'Disetujui', fmtDate(supervisorRow.created_at))] : []),
+    ...(managerRow    ? [signBox('Menyetujui Tahap 2', 'Manager', managerName, managerSig, 'Disetujui', fmtDate(managerRow.created_at))] : []),
+    ...(financeMgrRow ? [signBox('Approval Finance Manager', 'Finance Manager', financeMgrName, financeMgrSig, 'Disetujui', fmtDate(financeMgrRow.created_at))] : []),
+    ...(verifierRow   ? [signBox('Verifikasi Pencairan', 'Finance', verifierName, verifierSig, 'Dicairkan', fmtDate(verifierRow.created_at))] : []),
   ].join('')
 
   const printDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -146,21 +138,6 @@ export function buildSlipBody(r, items, history, qrDataUrl) {
       <td colspan="4" style="padding:6px 8px">TOTAL</td>
       <td style="text-align:right;padding:6px 8px">${rp(r.total_amount)}</td>
     </tr>
-  </tbody>
-</table>
-
-<div class="hist-title">Riwayat Approval</div>
-<table class="hist-table">
-  <thead>
-    <tr>
-      <th style="width:100px">Tanggal &amp; Jam</th>
-      <th style="width:130px">Oleh</th>
-      <th style="width:110px">Aksi</th>
-      <th>Catatan</th>
-    </tr>
-  </thead>
-  <tbody>
-    ${historyRows || '<tr><td colspan="4" style="text-align:center;color:#999">Belum ada riwayat approval.</td></tr>'}
   </tbody>
 </table>
 
@@ -214,17 +191,6 @@ export function wrapSlipsHtml(bodies, savePdf, docTitle) {
   tbody td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; font-size: 11px; }
   .total-row td { font-weight: 700; font-size: 12px; background: #e6f3f3; border-top: 2px solid #14213d; }
 
-  .hist-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #14213d; margin: 4px 0 6px; }
-  .hist-table thead th { background: #eef1f6; color: #14213d; }
-  .hist-table tbody td { font-size: 10px; vertical-align: top; }
-  .hist-action { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 9px; font-weight: 700; white-space: nowrap; }
-  .hist-submitted { background: #eef1f6; color: #444; }
-  .hist-approved { background: #e6f3ea; color: #1f8a4c; }
-  .hist-finance_approved { background: #e6f0f3; color: #0f6e6e; }
-  .hist-verified { background: #e6f3f3; color: #14213d; }
-  .hist-rejected { background: #fbe6e6; color: #b3261e; }
-  .hist-revision { background: #fff3e0; color: #b35900; }
-
   .bottom { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 20px; padding-top: 14px; border-top: 1px solid #e3e6ea; }
   .qr-wrap { text-align: center; flex-shrink: 0; }
   .qr-wrap img { border: 1px solid #ddd; border-radius: 4px; }
@@ -237,6 +203,7 @@ export function wrapSlipsHtml(bodies, savePdf, docTitle) {
   .sign-printed-name { font-size: 10px; font-weight: 700; text-align: center; color: #14213d; margin-bottom: 5px; min-height: 12px; }
   .sign-name { font-size: 10px; font-weight: 700; }
   .sign-role { font-size: 9px; color: #666; margin-top: 1px; }
+  .sign-date { font-size: 8.5px; color: #0f6e6e; margin-top: 3px; white-space: nowrap; }
 
   .footer { margin-top: 14px; text-align: center; font-size: 9px; color: #aaa; border-top: 1px dashed #ddd; padding-top: 8px; }
   @media print { @page { margin: 15mm; } }
