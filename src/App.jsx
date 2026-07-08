@@ -1408,12 +1408,16 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
 // level UI (nav item disembunyikan) DAN di level database (RLS policy
 // "cash_topups_select_finance" / "..._insert_finance" di supabase-update-v3.sql),
 // jadi tetap aman walau seseorang mencoba akses langsung lewat API.
+// ---------------------------------------------------------------- SUBMIT KAS (Isi Ulang Saldo) ----
+// Halaman ini HANYA untuk mengisi ulang (top-up) saldo kas kecil. Tabel
+// "Laporan Arus Kas" (riwayat transaksi lengkap + filter + export) sengaja
+// DIPISAH ke halaman/menu tersendiri (lihat komponen CashFlowReport di
+// bawah) supaya menu ini tetap fokus untuk aksi submit/isi ulang saja.
 function CashBalance({ profile, refreshKey, onActed }) {
   const [topups, setTopups] = useState([])
-  const [disbursements, setDisbursements] = useState([]) // approval_history rows (action='verified') + joined reimbursement info
+  const [disbursements, setDisbursements] = useState([]) // dipakai untuk hitung saldo berjalan saja
   const [loadingData, setLoadingData] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [names, setNames] = useState({})
 
   const [amount, setAmount] = useState('')
   const [topupDate, setTopupDate] = useState(() => new Date().toISOString().slice(0, 10))
@@ -1421,6 +1425,161 @@ function CashBalance({ profile, refreshKey, onActed }) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoadingData(true)
+    setLoadError('')
+
+    try {
+      const [topupRes, disbRes] = await Promise.all([
+        supabase.from('cash_topups').select('*'),
+        supabase
+          .from('approval_history')
+          .select('id, reimbursement_id, reimbursements(total_amount, status)')
+          .eq('action', 'verified'),
+      ])
+
+      if (topupRes.error) { setLoadError(topupRes.error.message); return }
+      if (disbRes.error) { console.error('Gagal memuat riwayat pencairan:', disbRes.error.message) }
+
+      setTopups(topupRes.data || [])
+      setDisbursements((disbRes.data || []).filter((d) => d.reimbursements))
+    } catch (err) {
+      console.error('Gagal memuat data saldo kas:', err)
+      setLoadError(err?.message || 'Terjadi kesalahan tak terduga saat memuat data.')
+    } finally {
+      setLoadingData(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load, refreshKey])
+
+  const totalTopup = topups.reduce((s, t) => s + Number(t.amount), 0)
+  const verifiedTotal = disbursements.reduce((s, d) => s + Number(d.reimbursements?.total_amount || 0), 0)
+  const saldo = totalTopup - verifiedTotal
+
+  function handleSubmit(e) {
+    e.preventDefault()
+    setSaveError('')
+    const amt = Number(amount)
+    if (!amt || amt <= 0) { setSaveError('Nominal harus lebih dari 0.'); return }
+    setShowConfirm(true)
+  }
+
+  async function confirmTopup() {
+    setSaving(true)
+    const { error } = await supabase.from('cash_topups').insert({
+      amount: Number(amount),
+      topup_date: topupDate,
+      note: note || null,
+      created_by: profile.id,
+    })
+    setSaving(false)
+    setShowConfirm(false)
+    if (error) { setSaveError('Gagal menyimpan: ' + error.message); return }
+
+    setAmount(''); setNote('')
+    setTopupDate(new Date().toISOString().slice(0, 10))
+    load()
+    onActed && onActed()
+  }
+
+  return (
+    <>
+      <div className="grid-kpi">
+        {loadingData ? Array(3).fill(0).map((_, i) => (
+          <div className="kpi-box" key={i}>
+            <div className="skeleton-row short" style={{ marginBottom: 8 }} />
+            <div className="skeleton-row medium" style={{ height: 28 }} />
+          </div>
+        )) : <>
+          <div className="kpi-box">
+            <div className="label">Saldo Kas Saat Ini</div>
+            <div className="value" style={{ color: saldo < 0 ? 'var(--danger)' : undefined }}>{rupiah(saldo)}</div>
+          </div>
+          <div className="kpi-box"><div className="label">Total Kas Masuk (Topup)</div><div className="value">{rupiah(totalTopup)}</div></div>
+          <div className="kpi-box"><div className="label">Total Sudah Dicairkan</div><div className="value">{rupiah(verifiedTotal)}</div></div>
+        </>}
+      </div>
+
+      {saldo < 0 && !loadingData && (
+        <div className="empty-state" style={{ color: 'var(--danger)', marginBottom: 16 }}>
+          Saldo kas minus. Pengeluaran yang sudah terverifikasi melebihi total kas masuk yang tercatat — segera isi ulang saldo kas.
+        </div>
+      )}
+
+      {loadError && <div className="empty-state" style={{ color: 'var(--danger)' }}>Gagal memuat data: {loadError}</div>}
+
+      <div className="card" style={{ maxWidth: 480, marginBottom: 20 }}>
+        <h3>Isi Ulang Saldo Kas</h3>
+        <form onSubmit={handleSubmit}>
+          <label>Nominal (Rp)</label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            placeholder="cth. 5000000"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            required
+          />
+          <label>Tanggal</label>
+          <input type="date" value={topupDate} onChange={(e) => setTopupDate(e.target.value)} required />
+          <label>Catatan (opsional)</label>
+          <input
+            type="text"
+            placeholder="cth. Transfer dari rekening perusahaan"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+          {saveError && <div className="empty-state" style={{ color: 'var(--danger)' }}>{saveError}</div>}
+          <button className="btn btn-success" type="submit" style={{ marginTop: 10 }}>
+            Tambah Saldo
+          </button>
+        </form>
+      </div>
+
+      {/* ---- Pop-up konfirmasi isi ulang saldo kas ---- */}
+      {showConfirm && (
+        <div className="modal-overlay" onClick={() => !saving && setShowConfirm(false)}>
+          <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-icon" style={{ color: '#1f8a4c' }}>💰</div>
+            <h3 className="confirm-title">Konfirmasi Isi Ulang Saldo Kas</h3>
+            <p className="confirm-desc">Pastikan data di bawah ini sudah benar sebelum disimpan.</p>
+
+            <div className="confirm-detail">
+              <div className="confirm-row"><span>Nominal</span><strong>{rupiah(Number(amount) || 0)}</strong></div>
+              <div className="confirm-row"><span>Tanggal</span><strong>{topupDate}</strong></div>
+              <div className="confirm-row"><span>Catatan</span><strong>{note || '—'}</strong></div>
+            </div>
+
+            <div className="confirm-actions">
+              <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => setShowConfirm(false)} disabled={saving}>
+                Batal
+              </button>
+              <button className="btn" style={{ background: '#1f8a4c', color: '#fff', flex: 1 }} onClick={confirmTopup} disabled={saving}>
+                {saving ? <><span className="spinner" />Menyimpan...</> : 'Ya, Tambah Saldo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------- LAPORAN ARUS KAS ----
+// Menu terpisah, khusus department Finance (lihat isFinanceUser). Berisi
+// riwayat lengkap kas masuk (top-up) & kas keluar (reimbursement yang sudah
+// dicairkan/verified), lengkap dengan filter periode/tipe serta export
+// Excel & PDF. Tidak ada aksi "isi ulang saldo" di sini — itu ada di menu
+// "Submit Kas" tersendiri.
+function CashFlowReport({ profile, refreshKey }) {
+  const [topups, setTopups] = useState([])
+  const [disbursements, setDisbursements] = useState([]) // approval_history rows (action='verified') + joined reimbursement info
+  const [loadingData, setLoadingData] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [names, setNames] = useState({})
 
   const [filterType, setFilterType] = useState('all') // all | in | out
   const [dateFrom, setDateFrom] = useState('')
@@ -1462,7 +1621,7 @@ function CashBalance({ profile, refreshKey, onActed }) {
         }
       }
     } catch (err) {
-      console.error('Gagal memuat data saldo kas:', err)
+      console.error('Gagal memuat data laporan arus kas:', err)
       setLoadError(err?.message || 'Terjadi kesalahan tak terduga saat memuat data.')
     } finally {
       setLoadingData(false)
@@ -1471,8 +1630,6 @@ function CashBalance({ profile, refreshKey, onActed }) {
 
   useEffect(() => { load() }, [load, refreshKey])
 
-  // Gabungkan kas masuk (topup) & kas keluar (reimbursement yang sudah
-  // dicairkan/verified) jadi satu buku arus kas, urut tanggal naik, dengan
   // Gabungkan kas masuk (topup) & kas keluar (reimbursement yang sudah
   // dicairkan/verified) jadi satu buku arus kas, urut tanggal naik, dengan
   // saldo berjalan (running balance) yang dihitung dari SELURUH riwayat —
@@ -1551,32 +1708,6 @@ function CashBalance({ profile, refreshKey, onActed }) {
   const hasActiveFilter = filterType !== 'all' || dateFrom || dateTo
 
   function resetFilters() { setFilterType('all'); setDateFrom(''); setDateTo('') }
-
-  function handleSubmit(e) {
-    e.preventDefault()
-    setSaveError('')
-    const amt = Number(amount)
-    if (!amt || amt <= 0) { setSaveError('Nominal harus lebih dari 0.'); return }
-    setShowConfirm(true)
-  }
-
-  async function confirmTopup() {
-    setSaving(true)
-    const { error } = await supabase.from('cash_topups').insert({
-      amount: Number(amount),
-      topup_date: topupDate,
-      note: note || null,
-      created_by: profile.id,
-    })
-    setSaving(false)
-    setShowConfirm(false)
-    if (error) { setSaveError('Gagal menyimpan: ' + error.message); return }
-
-    setAmount(''); setNote('')
-    setTopupDate(new Date().toISOString().slice(0, 10))
-    load()
-    onActed && onActed()
-  }
 
   // ---- Export Excel: laporan arus kas (baris yang sedang tampil / sudah difilter) ----
   async function handleExportExcel() {
@@ -1733,41 +1864,6 @@ function CashBalance({ profile, refreshKey, onActed }) {
         </>}
       </div>
 
-      {saldo < 0 && !loadingData && (
-        <div className="empty-state" style={{ color: 'var(--danger)', marginBottom: 16 }}>
-          Saldo kas minus. Pengeluaran yang sudah terverifikasi melebihi total kas masuk yang tercatat — segera isi ulang saldo kas.
-        </div>
-      )}
-
-      <div className="card" style={{ maxWidth: 480, marginBottom: 20 }}>
-        <h3>Isi Ulang Saldo Kas</h3>
-        <form onSubmit={handleSubmit}>
-          <label>Nominal (Rp)</label>
-          <input
-            type="number"
-            min="1"
-            step="1"
-            placeholder="cth. 5000000"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            required
-          />
-          <label>Tanggal</label>
-          <input type="date" value={topupDate} onChange={(e) => setTopupDate(e.target.value)} required />
-          <label>Catatan (opsional)</label>
-          <input
-            type="text"
-            placeholder="cth. Transfer dari rekening perusahaan"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-          {saveError && <div className="empty-state" style={{ color: 'var(--danger)' }}>{saveError}</div>}
-          <button className="btn btn-success" type="submit" style={{ marginTop: 10 }}>
-            Tambah Saldo
-          </button>
-        </form>
-      </div>
-
       {/* ---- Filter Laporan Arus Kas ---- */}
       <div className="filter-panel">
         <div className="filter-panel-head">
@@ -1852,32 +1948,6 @@ function CashBalance({ profile, refreshKey, onActed }) {
           </div>
         )}
       </div>
-
-      {/* ---- Pop-up konfirmasi isi ulang saldo kas ---- */}
-      {showConfirm && (
-        <div className="modal-overlay" onClick={() => !saving && setShowConfirm(false)}>
-          <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="confirm-icon" style={{ color: '#1f8a4c' }}>💰</div>
-            <h3 className="confirm-title">Konfirmasi Isi Ulang Saldo Kas</h3>
-            <p className="confirm-desc">Pastikan data di bawah ini sudah benar sebelum disimpan.</p>
-
-            <div className="confirm-detail">
-              <div className="confirm-row"><span>Nominal</span><strong>{rupiah(Number(amount) || 0)}</strong></div>
-              <div className="confirm-row"><span>Tanggal</span><strong>{topupDate}</strong></div>
-              <div className="confirm-row"><span>Catatan</span><strong>{note || '—'}</strong></div>
-            </div>
-
-            <div className="confirm-actions">
-              <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => setShowConfirm(false)} disabled={saving}>
-                Batal
-              </button>
-              <button className="btn" style={{ background: '#1f8a4c', color: '#fff', flex: 1 }} onClick={confirmTopup} disabled={saving}>
-                {saving ? <><span className="spinner" />Menyimpan...</> : 'Ya, Tambah Saldo'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }
@@ -2537,6 +2607,7 @@ const PAGE_TITLE = {
   mine:                   'Pengajuan Saya',
   approval:               'Approval',
   finance:                'Finance Verification',
+  'cash-flow-report':     'Laporan Arus Kas',
   admin:                  'Admin Panel',
   signature:              'Tanda Tangan Saya',
 }
@@ -2599,6 +2670,9 @@ export default function App() {
     { key: 'mine',      label: 'Pengajuan Saya',        icon: Ico.mine,      show: true },
     { key: 'approval',  label: 'Approval',              icon: Ico.approval,  show: isApprover },
     { key: 'finance',   label: 'Finance Verification',  icon: Ico.finance,   show: isFinance },
+    // Menu terpisah, khusus department Finance — bukan bagian dari submenu
+    // "Submit" karena ini murni laporan (bukan aksi submit/isi ulang).
+    { key: 'cash-flow-report', label: 'Laporan Arus Kas', icon: Ico.cash,    show: isFinance },
     { key: 'signature', label: 'Tanda Tangan Saya',      icon: Ico.signature, show: true },
     { key: 'admin',     label: 'Admin Panel',           icon: Ico.admin,     show: profile.role === 'admin', accent: true },
   ].filter((n) => n.show)
@@ -2759,6 +2833,7 @@ export default function App() {
             {tab === 'mine'                   && <MyRequests profile={profile} refreshKey={refreshKey} onRefresh={bump} />}
             {tab === 'approval'               && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
             {tab === 'finance'                && isFinance  && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
+            {tab === 'cash-flow-report'       && isFinance  && <CashFlowReport profile={profile} refreshKey={refreshKey} />}
             {tab === 'admin'                  && profile.role === 'admin' && <AdminPanel />}
             {tab === 'signature' && <MyProfile profile={profile} onUpdated={loadProfile} />}
           </div>
