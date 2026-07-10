@@ -614,11 +614,16 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
 
 .modal-overlay {
   position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
   background: rgba(20, 33, 61, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+  overflow-y: auto;
   z-index: 1000;
 }
 .modal-box {
@@ -626,8 +631,12 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
   border-radius: 12px;
   padding: 24px;
   width: 320px;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
   position: relative;
   box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+  flex-shrink: 0;
 }
 .modal-close {
   position: absolute;
