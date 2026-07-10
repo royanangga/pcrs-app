@@ -18,23 +18,71 @@
      (sidebar, login screen, dll — yang memang harus tetap gelap di kedua tema). */
   --heading: var(--navy);
   --row-hover: #f0f4fa;
+  --card-alt: #fafbfc;
 }
 
 /* ================================================================
    DARK MODE — diaktifkan lewat class "dark" di <html>, di-toggle dari
    tombol matahari/bulan di header. Preferensi disimpan di localStorage
    (lihat App.jsx), fallback ke prefers-color-scheme sistem.
+
+   Bukan cuma "invert ke abu-abu" — palet ini diturunkan dari identitas
+   brand yang sudah ada (navy + teal), jadi berasa PCRS yang sama,
+   cuma versi malam hari: dasar navy pekat kehijauan (bukan abu netral),
+   aksen teal dinaikkan kecerahannya supaya tetap "hidup" di atas latar
+   gelap, dan status/badge pakai tint transparan alih-alih warna pastel
+   (yang kalau dipakai apa adanya di dark mode jadi silau/norak).
    ================================================================ */
 html.dark {
-  --bg: #0f1420;
-  --card: #1a2233;
-  --border: #2c3650;
-  --text: #e3e7ef;
-  --text-muted: #8b93a7;
-  --heading: #e3e7ef;
-  --row-hover: #232d44;
+  --bg: #0a1420;
+  --card: #101d2c;
+  --card-alt: #16293a;
+  --border: #223449;
+  --text: #dce6e4;
+  --text-muted: #7f97a0;
+  --heading: #f1f7f5;
+  --row-hover: #16283a;
+
+  /* Aksen dinaikkan kecerahannya dari versi light supaya tetap punya
+     kontras & "gigi" di atas latar gelap, tanpa terasa neon. */
+  --teal: #2dd4c2;
+  --teal-light: rgba(45, 212, 194, 0.14);
+  --danger: #ff7a72;
+  --warning: #ffc35c;
+  --success: #4ade80;
 }
 html.dark img { opacity: 0.92; }
+
+/* Sidebar & login tetap "navy" di kedua tema, tapi di dark mode dikasih
+   gradasi halus dari navy ke nyaris-hitam supaya tidak keliatan sebagai
+   satu blok warna rata di tengah panel-panel yang sudah lebih gelap. */
+html.dark .sidebar,
+html.dark .login-wrap,
+html.dark .bottom-nav {
+  background: linear-gradient(180deg, #14213d 0%, #0a1420 100%);
+}
+
+/* Badge status: light mode pakai pastel solid, dark mode pakai tint
+   transparan + teks lebih terang supaya kontrasnya pas di atas kartu gelap. */
+html.dark .badge-draft            { background: rgba(255,255,255,0.08); color: #aab6c4; }
+html.dark .badge-submitted        { background: rgba(255,195,92,0.16); color: var(--warning); }
+html.dark .badge-approved         { background: rgba(74,222,128,0.16); color: var(--success); }
+html.dark .badge-finance_approved { background: rgba(94,169,255,0.16); color: #7fb3ff; }
+html.dark .badge-rejected         { background: rgba(255,122,114,0.16); color: var(--danger); }
+html.dark .badge-revision         { background: rgba(255,159,67,0.18); color: #ff9f43; }
+html.dark .badge-verified         { background: rgba(94,169,255,0.16); color: #6dc2ff; }
+html.dark .badge-topup            { background: rgba(74,222,128,0.16); color: var(--success); }
+
+/* Ring fokus input & glow tombol ikut warna teal versi dark supaya tetap
+   terlihat jelas (versi light-nya terlalu redup di atas latar gelap). */
+html.dark input:focus, html.dark select:focus, html.dark textarea:focus {
+  box-shadow: 0 0 0 3px rgba(45, 212, 194, 0.22);
+}
+html.dark .kpi-box:hover { border-color: rgba(45, 212, 194, 0.4); }
+html.dark .skeleton-row {
+  background: linear-gradient(90deg, #16293a 25%, #1e3348 50%, #16293a 75%);
+  background-size: 700px 100%;
+}
 
 
 * { box-sizing: border-box; }
@@ -420,7 +468,7 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
 .attachment-list a { color: var(--teal); text-decoration: none; }
 
 .detail-toggle { color: var(--teal); cursor: pointer; font-size: 12px; font-weight: 600; }
-.detail-box { background: #fafbfc; border: 1px dashed var(--border); border-radius: 6px; padding: 12px; margin-top: 8px; display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.detail-box { background: var(--card-alt); border: 1px dashed var(--border); border-radius: 6px; padding: 12px; margin-top: 8px; display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
 .qr-box { text-align: center; font-size: 11px; color: var(--text-muted); }
 .checklist-line { font-size: 12px; color: var(--text-muted); margin: 4px 0; }
 
@@ -791,7 +839,7 @@ td input[type="checkbox"], th input[type="checkbox"] {
 .admin-form-grid label { margin-top: 0; }
 
 .admin-items-box {
-  background: #fafbfc;
+  background: var(--card-alt);
   border: 1px dashed var(--border);
   border-radius: 6px;
   padding: 12px;
