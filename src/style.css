@@ -1479,15 +1479,20 @@ tbody tr:hover .badge {
   .item-row > div:nth-child(3) { grid-column: 1 / -1; }
   .item-row > div:nth-child(5) { grid-column: 1 / -1; text-align: right; }
 
-  .modal-overlay { align-items: flex-end; }
+  .modal-overlay {
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
   .modal-box {
     width: 100% !important;
-    border-radius: 16px 16px 0 0;
-    max-height: 90vh;
+    max-width: 360px !important;
+    border-radius: 12px;
+    max-height: 85vh;
     overflow-y: auto;
-    animation: slideUpMobile 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: scaleSpring 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
-  .confirm-modal { max-width: 100% !important; }
+  .confirm-modal { max-width: 360px !important; }
 
   .login-wrap { align-items: flex-end; padding: 0; }
   .login-card {
