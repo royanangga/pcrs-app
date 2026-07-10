@@ -612,6 +612,15 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
 }
 .track-row span:first-child { color: var(--text-muted); }
 
+/* Saat pop-up (modal-overlay) muncul di mana pun dalam halaman, sidebar
+   (PC) dan bottom-nav (mobile) langsung disembunyikan otomatis — supaya
+   pop-up benar-benar satu-satunya yang terlihat, menutup seluruh layar. */
+body:has(.modal-overlay) .sidebar,
+body:has(.modal-overlay) .bottom-nav,
+body:has(.modal-overlay) .sidebar-overlay {
+  display: none !important;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
