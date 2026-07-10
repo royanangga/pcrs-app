@@ -34,6 +34,57 @@ async function callAdminOps(session, payload) {
   return res.json()
 }
 
+// ---- REUSABLE: confirm modal (pengganti window.confirm bawaan browser) ----
+// Dipakai lewat: const [askConfirm, confirmModal] = useConfirm()
+// Lalu: const ok = await askConfirm('Pesan konfirmasi...'); if (!ok) return
+// Render {confirmModal} di mana saja dalam JSX komponen yang memakainya.
+function useConfirm() {
+  const [state, setState] = useState(null) // { message, title, danger, resolveFn }
+
+  const askConfirm = useCallback((message, opts = {}) => {
+    return new Promise((resolve) => {
+      setState({
+        message,
+        title: opts.title || 'Konfirmasi',
+        danger: opts.danger !== false,
+        confirmLabel: opts.confirmLabel || 'Ya, Lanjutkan',
+        resolveFn: resolve,
+      })
+    })
+  }, [])
+
+  const settle = (result) => {
+    if (state) state.resolveFn(result)
+    setState(null)
+  }
+
+  const confirmModal = state && (
+    <div className="modal-overlay" onClick={() => settle(false)}>
+      <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="confirm-icon" style={{ color: state.danger ? '#c0392b' : '#0f6e6e' }}>
+          {state.danger ? '⚠' : '?'}
+        </div>
+        <h3 className="confirm-title">{state.title}</h3>
+        <p className="confirm-desc" style={{ whiteSpace: 'pre-line' }}>{state.message}</p>
+        <div className="confirm-actions">
+          <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => settle(false)}>
+            Batal
+          </button>
+          <button
+            className="btn"
+            style={{ background: state.danger ? '#c0392b' : '#0f6e6e', color: '#fff', flex: 1 }}
+            onClick={() => settle(true)}
+          >
+            {state.confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  return [askConfirm, confirmModal]
+}
+
 // ---- REUSABLE: bulk action toolbar ----
 function BulkBar({ count, onClear, children }) {
   if (count === 0) return null
@@ -48,6 +99,7 @@ function BulkBar({ count, onClear, children }) {
 
 // ---- sub-tab: USER MANAGEMENT ----
 function AdminUsers() {
+  const [askConfirm, confirmModal] = useConfirm()
   const [users, setUsers] = useState([])
   const [session, setSession] = useState(null)
   const [editing, setEditing] = useState(null)
@@ -169,7 +221,8 @@ function AdminUsers() {
   }
 
   async function deleteUser(id, name) {
-    if (!window.confirm(`Hapus user "${name}"?\nUser tidak akan bisa login lagi dan semua datanya akan dihapus permanen.`)) return
+    const ok = await askConfirm(`Hapus user "${name}"?\nUser tidak akan bisa login lagi dan semua datanya akan dihapus permanen.`, { title: 'Hapus User' })
+    if (!ok) return
     setLoading(true)
     const result = await callAdminOps(session, { action: 'delete_user', user_id: id })
     if (result.error) {
@@ -184,7 +237,8 @@ function AdminUsers() {
   // ---- bulk actions ----
   async function bulkChangeRole() {
     if (!session || selected.size === 0) return
-    if (!window.confirm(`Ubah role ${selected.size} user terpilih menjadi "${bulkRole}"?`)) return
+    const ok = await askConfirm(`Ubah role ${selected.size} user terpilih menjadi "${bulkRole}"?`, { title: 'Ubah Role Massal', danger: false, confirmLabel: 'Ya, Ubah Role' })
+    if (!ok) return
     setLoading(true)
     const ids = Array.from(selected)
     const { error } = await supabase.from('profiles').update({ role: bulkRole }).in('id', ids)
@@ -197,7 +251,8 @@ function AdminUsers() {
 
   async function bulkDeleteUsers() {
     if (!session || selected.size === 0) return
-    if (!window.confirm(`Hapus ${selected.size} user terpilih?\nSemua user akan dihapus permanen dan tidak bisa login lagi.`)) return
+    const ok = await askConfirm(`Hapus ${selected.size} user terpilih?\nSemua user akan dihapus permanen dan tidak bisa login lagi.`, { title: 'Hapus User Massal' })
+    if (!ok) return
     setLoading(true)
     const ids = Array.from(selected)
     let failCount = 0
@@ -344,12 +399,15 @@ function AdminUsers() {
           </div>
         </div>
       )}
+
+      {confirmModal}
     </div>
   )
 }
 
 // ---- sub-tab: TRANSACTION MANAGEMENT ----
 function AdminTransactions() {
+  const [askConfirm, confirmModal] = useConfirm()
   const [rows, setRows] = useState([])
   const [topups, setTopups] = useState([])
   const [profiles, setProfiles] = useState({})
@@ -463,11 +521,13 @@ function AdminTransactions() {
 
   async function deleteTransaction(row) {
     if (row.recordType === 'reimb') {
-      if (!window.confirm(`Hapus transaksi "${row.data.request_no}"? Semua item, lampiran, dan riwayat approval juga akan dihapus.`)) return
+      const ok = await askConfirm(`Hapus transaksi "${row.data.request_no}"? Semua item, lampiran, dan riwayat approval juga akan dihapus.`, { title: 'Hapus Transaksi' })
+      if (!ok) return
       const { error } = await supabase.from('reimbursements').delete().eq('id', row.data.id)
       if (error) { setMsg('Error: ' + error.message); return }
     } else {
-      if (!window.confirm(`Hapus pengisian kas "${row.data.topup_no || ''}"?`)) return
+      const ok = await askConfirm(`Hapus pengisian kas "${row.data.topup_no || ''}"?`, { title: 'Hapus Pengisian Kas' })
+      if (!ok) return
       const { error } = await supabase.from('cash_topups').delete().eq('id', row.data.id)
       if (error) { setMsg('Error: ' + error.message); return }
     }
@@ -476,7 +536,8 @@ function AdminTransactions() {
   }
 
   async function deleteItem(itemId, reimbId) {
-    if (!window.confirm('Hapus item ini?')) return
+    const ok = await askConfirm('Hapus item ini?', { title: 'Hapus Item' })
+    if (!ok) return
     await supabase.from('reimbursement_items').delete().eq('id', itemId)
     const { data: remaining } = await supabase.from('reimbursement_items').select('amount').eq('reimbursement_id', reimbId)
     const newTotal = (remaining || []).reduce((s, i) => s + Number(i.amount), 0)
@@ -492,7 +553,8 @@ function AdminTransactions() {
       .filter((key) => key.startsWith('reimb-'))
       .map((key) => key.slice('reimb-'.length))
     if (ids.length === 0) { setMsg('Pilih minimal satu transaksi reimbursement (ubah status tidak berlaku untuk pengisian kas).'); return }
-    if (!window.confirm(`Ubah status ${ids.length} transaksi terpilih menjadi "${STATUS_LABEL[bulkStatus]}"?`)) return
+    const ok = await askConfirm(`Ubah status ${ids.length} transaksi terpilih menjadi "${STATUS_LABEL[bulkStatus]}"?`, { title: 'Ubah Status Massal', danger: false, confirmLabel: 'Ya, Ubah Status' })
+    if (!ok) return
     const { error } = await supabase.from('reimbursements').update({ status: bulkStatus }).in('id', ids)
     if (error) setMsg('Gagal ubah status massal: ' + error.message)
     else setMsg(`Status ${ids.length} transaksi berhasil diubah.`)
@@ -502,7 +564,8 @@ function AdminTransactions() {
 
   async function bulkDeleteTransactions() {
     if (selected.size === 0) return
-    if (!window.confirm(`Hapus ${selected.size} transaksi terpilih?\nSemua item, lampiran, dan riwayat approval terkait juga akan dihapus.`)) return
+    const ok = await askConfirm(`Hapus ${selected.size} transaksi terpilih?\nSemua item, lampiran, dan riwayat approval terkait juga akan dihapus.`, { title: 'Hapus Transaksi Massal' })
+    if (!ok) return
     const keys = Array.from(selected)
     const reimbIds = keys.filter((key) => key.startsWith('reimb-')).map((key) => key.slice('reimb-'.length))
     const topupIds = keys.filter((key) => key.startsWith('topup-')).map((key) => key.slice('topup-'.length))
@@ -639,12 +702,15 @@ function AdminTransactions() {
       </div>
 
       <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={mergedRows.length} />
+
+      {confirmModal}
     </div>
   )
 }
 
 // ---- sub-tab: APPROVAL HISTORY ----
 function AdminHistory() {
+  const [askConfirm, confirmModal] = useConfirm()
   const [rows, setRows] = useState([])
   const [topups, setTopups] = useState([])
   const [profiles, setProfiles] = useState({})
@@ -724,10 +790,12 @@ function AdminHistory() {
 
   async function deleteHistory(row) {
     if (row.recordType === 'topup') {
-      if (!window.confirm('Hapus riwayat pengisian kas ini?')) return
+      const ok = await askConfirm('Hapus riwayat pengisian kas ini?', { title: 'Hapus Riwayat' })
+      if (!ok) return
       await supabase.from('cash_topups').delete().eq('id', row.data.id)
     } else {
-      if (!window.confirm('Hapus riwayat ini?')) return
+      const ok = await askConfirm('Hapus riwayat ini?', { title: 'Hapus Riwayat' })
+      if (!ok) return
       await supabase.from('approval_history').delete().eq('id', row.data.id)
     }
     load()
@@ -735,7 +803,8 @@ function AdminHistory() {
 
   async function bulkDeleteHistory() {
     if (selected.size === 0) return
-    if (!window.confirm(`Hapus ${selected.size} riwayat terpilih?`)) return
+    const ok = await askConfirm(`Hapus ${selected.size} riwayat terpilih?`, { title: 'Hapus Riwayat Massal' })
+    if (!ok) return
     const keys = Array.from(selected)
     const histIds = keys.filter((key) => key.startsWith('hist-')).map((key) => key.slice('hist-'.length))
     const topupIds = keys.filter((key) => key.startsWith('topup-')).map((key) => key.slice('topup-'.length))
@@ -788,6 +857,8 @@ function AdminHistory() {
       </div>
 
       <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={mergedRows.length} />
+
+      {confirmModal}
     </div>
   )
 }
