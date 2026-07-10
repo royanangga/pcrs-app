@@ -1820,7 +1820,7 @@ function CashFlowReport({ profile, refreshKey }) {
         sortTie: t.created_at ? new Date(t.created_at).getTime() : dayTs,
         type: 'in',
         description: t.note || 'Isi ulang kas',
-        ref: '—',
+        ref: t.topup_no || '—',
         person: names[t.created_by] || '—',
         amount: Number(t.amount) || 0,
       }
