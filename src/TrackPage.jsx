@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
 import { AuthScreen } from './App.jsx'
 import { printSlipByRequestNo } from './slip.js'
+import Icon from './icons.jsx'
 
 const STATUS_LABEL = {
   draft: 'Draft',
@@ -121,11 +122,11 @@ export default function TrackPage({ requestNo }) {
               <div style={{ marginTop: 12 }}>
                 <button
                   className="btn btn-sm"
-                  style={{ background: '#14213d', color: '#fff', width: '100%' }}
+                  style={{ background: '#14213d', color: '#fff', width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                   disabled={printing}
                   onClick={handlePrint}
                 >
-                  {printing ? 'Menyiapkan...' : '🖨 Print Ulang Slip'}
+                  {printing ? 'Menyiapkan...' : <><Icon name="printer" size={13} /> Print Ulang Slip</>}
                 </button>
                 {printError && <div className="error-text" style={{ marginTop: 6 }}>{printError}</div>}
               </div>
@@ -142,7 +143,7 @@ export default function TrackPage({ requestNo }) {
                       {isImage(a.file_name) ? (
                         <img src={fileUrl(a.file_path)} alt={a.file_name} />
                       ) : (
-                        <div className="track-att-file">📄</div>
+                        <div className="track-att-file"><Icon name="fileText" size={20} /></div>
                       )}
                       <span>{a.file_name}</span>
                     </a>

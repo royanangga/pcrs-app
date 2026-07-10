@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from './supabaseClient'
+import Icon from './icons.jsx'
 
 // Notifikasi in-app untuk PENGAJU: memberi tahu kalau pengajuan reimbursement
 // miliknya sendiri baru saja disetujui/ditolak/perlu revisi/dicairkan, tanpa
@@ -19,11 +20,11 @@ const NOTIF_ACTION_LABEL = {
 }
 
 const NOTIF_ACTION_ICON = {
-  approved: '✅',
-  rejected: '❌',
-  revision: '✏️',
-  finance_approved: '✅',
-  verified: '💰',
+  approved: 'check',
+  rejected: 'x',
+  revision: 'edit',
+  finance_approved: 'check',
+  verified: 'wallet',
 }
 
 // Aksi approval yang relevan dinotifikasikan ke pengaju. 'submitted' sengaja
@@ -112,7 +113,7 @@ export default function NotificationBell({ profile, refreshKey, onNavigate }) {
   return (
     <div className="notif-bell-wrap" ref={wrapRef}>
       <button className="notif-bell-btn" onClick={toggleOpen} title="Notifikasi">
-        🔔
+        <Icon name="bell" size={18} />
         {unreadCount > 0 && <span className="notif-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>}
       </button>
 
@@ -129,7 +130,7 @@ export default function NotificationBell({ profile, refreshKey, onNavigate }) {
                   className="notif-item"
                   onClick={() => { setOpen(false); onNavigate && onNavigate('mine') }}
                 >
-                  <span className="notif-item-icon">{NOTIF_ACTION_ICON[it.action] || '🔔'}</span>
+                  <span className="notif-item-icon"><Icon name={NOTIF_ACTION_ICON[it.action] || 'bell'} size={15} /></span>
                   <span className="notif-item-body">
                     <span className="notif-item-text">
                       Pengajuan <strong>{it.requestNo}</strong> {NOTIF_ACTION_LABEL[it.action] || it.action}

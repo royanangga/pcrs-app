@@ -6,6 +6,7 @@ import Pagination from './Pagination.jsx'
 import { trackUrl, printSlip as printSlipShared, printBulkSlips as printBulkSlipsShared, printCashTopupSlip } from './slip.js'
 import { MonthlyBarChart, CategoryDonutChart } from './Charts.jsx'
 import NotificationBell from './Notifications.jsx'
+import Icon, { Ico } from './icons.jsx'
 
 const CATEGORIES = ['Transport', 'Meal', 'Office Supplies', 'Communication', 'Accommodation', 'Other']
 
@@ -381,10 +382,10 @@ function SubmitForm({ profile, onSubmitted }) {
     {showConfirm && (
       <div className="modal-overlay" onClick={() => setShowConfirm(false)}>
         <div className="modal-box" style={{ width: 480, maxWidth: '96vw' }} onClick={(e) => e.stopPropagation()}>
-          <div className="modal-close" onClick={() => setShowConfirm(false)}>✕</div>
+          <div className="modal-close" onClick={() => setShowConfirm(false)}><Icon name="x" size={16} /></div>
 
           <div style={{ textAlign: 'center', marginBottom: 16 }}>
-            <div style={{ fontSize: 36, marginBottom: 8 }}>📋</div>
+            <div style={{ color: 'var(--teal)', marginBottom: 8 }}><Icon name="clipboard" size={36} /></div>
             <h3 style={{ margin: 0, color: 'var(--navy)' }}>Konfirmasi Pengajuan</h3>
             <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '6px 0 0' }}>
               Pastikan semua data berikut sudah benar sebelum dikirim.
@@ -446,8 +447,8 @@ function SubmitForm({ profile, onSubmitted }) {
 
           {/* File */}
           {files.length > 0 && (
-            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-muted)' }}>
-              📎 {files.length} file bukti: {files.map((f) => f.name).join(', ')}
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon name="paperclip" size={13} /> {files.length} file bukti: {files.map((f) => f.name).join(', ')}
             </div>
           )}
 
@@ -455,8 +456,8 @@ function SubmitForm({ profile, onSubmitted }) {
             <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => setShowConfirm(false)}>
               Kembali & Edit
             </button>
-            <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleConfirmedSubmit}>
-              ✓ Ya, Kirim Sekarang
+            <button className="btn btn-primary" style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={handleConfirmedSubmit}>
+              <Icon name="check" size={15} /> Ya, Kirim Sekarang
             </button>
           </div>
         </div>
@@ -632,15 +633,18 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
       <h3>Pengajuan Saya ({filtered.length}{filtered.length !== rows.length ? ` dari ${rows.length}` : ''})</h3>
 
       <div className="myreq-search">
-        <input
-          type="text"
-          placeholder="🔍 Cari no. request, tanggal, status, atau nominal..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <div className="myreq-search-box">
+          <span className="search-icon"><Icon name="search" size={14} /></span>
+          <input
+            type="text"
+            placeholder="Cari no. request, tanggal, status, atau nominal..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
         {search && (
-          <button type="button" className="btn btn-sm" style={{ background: '#eee', color: '#555' }} onClick={() => setSearch('')}>
-            ✕ Bersihkan
+          <button type="button" className="btn btn-sm" style={{ background: '#eee', color: '#555', display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => setSearch('')}>
+            <Icon name="x" size={12} /> Bersihkan
           </button>
         )}
       </div>
@@ -671,7 +675,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                         style={{ background: '#ffe6cc', color: '#b35900', fontWeight: 700 }}
                         onClick={() => editId === r.id ? setEditId(null) : openRevision(r)}
                       >
-                        {editId === r.id ? 'Tutup' : '✏ Edit & Submit Ulang'}
+                        {editId === r.id ? 'Tutup' : <><Icon name="edit" size={12} /> Edit & Submit Ulang</>}
                       </button>
                     ) : (
                       <span className="detail-toggle" onClick={() => toggleOpen(r.id)}>
@@ -687,7 +691,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                     <td colSpan={5}>
                       <div className="revision-panel">
                         <div className="revision-header">
-                          ✏ Revisi Pengajuan <span>{r.request_no}</span>
+                          <Icon name="edit" size={14} style={{ marginRight: 4 }} /> Revisi Pengajuan <span>{r.request_no}</span>
                           <div className="revision-note">Nomor request tetap sama. Setelah submit ulang, alur approval: {approvalFlowLabel(profile.role, editTotal)}.</div>
                         </div>
 
@@ -735,7 +739,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
 
                         <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
                           <button className="btn btn-primary" onClick={() => submitRevision(r)} disabled={saving}>
-                            {saving ? <><span className="spinner" />Menyimpan...</> : '✓ Submit Ulang'}
+                            {saving ? <><span className="spinner" />Menyimpan...</> : <><Icon name="check" size={13} /> Submit Ulang</>}
                           </button>
                           <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} onClick={() => setEditId(null)}>
                             Batal
@@ -1008,7 +1012,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
     approved: {
       label: 'Approve',
       color: 'var(--success)',
-      icon: '✓',
+      icon: <Icon name="check" size={28} />,
       desc: (row) => {
         if (!row) return ''
         if (row._stage === 'fm') return 'Setelah Anda setujui (Finance Manager), pengajuan siap dicairkan dan akan masuk ke antrian Finance Verification.'
@@ -1017,8 +1021,8 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
         return 'Setelah Anda setujui, pengajuan akan masuk ke antrian Approval Finance Manager (sebelum dana dicairkan).'
       },
     },
-    rejected: { label: 'Reject', color: 'var(--danger)', icon: '✕', desc: () => 'Pengajuan akan ditolak dan employee akan diberitahu.' },
-    revision: { label: 'Kembalikan untuk Revisi', color: '#b35900', icon: '↩', desc: () => 'Pengajuan dikembalikan ke employee untuk diperbaiki.' },
+    rejected: { label: 'Reject', color: 'var(--danger)', icon: <Icon name="x" size={28} />, desc: () => 'Pengajuan akan ditolak dan employee akan diberitahu.' },
+    revision: { label: 'Kembalikan untuk Revisi', color: '#b35900', icon: <Icon name="undo" size={28} />, desc: () => 'Pengajuan dikembalikan ke employee untuk diperbaiki.' },
   }
 
   // Label tahap per baris, ditampilkan sebagai badge di tabel supaya jelas
@@ -1050,9 +1054,9 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
                 value={bulkNote}
                 onChange={(e) => setBulkNote(e.target.value)}
               />
-              <button className="btn btn-success btn-sm" onClick={() => setBulkConfirm({ action: 'approved' })}>✓ Approve Semua</button>
-              <button className="btn btn-danger btn-sm" onClick={() => setBulkConfirm({ action: 'rejected' })}>✕ Reject Semua</button>
-              <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => setBulkConfirm({ action: 'revision' })}>↩ Revisi Semua</button>
+              <button className="btn btn-success btn-sm" onClick={() => setBulkConfirm({ action: 'approved' })}><Icon name="check" size={12} /> Approve Semua</button>
+              <button className="btn btn-danger btn-sm" onClick={() => setBulkConfirm({ action: 'rejected' })}><Icon name="x" size={12} /> Reject Semua</button>
+              <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => setBulkConfirm({ action: 'revision' })}><Icon name="undo" size={12} /> Revisi Semua</button>
               <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} onClick={() => setSelected([])}>Batal Pilih</button>
             </div>
           </div>
@@ -1114,9 +1118,9 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
                     />
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
-                    <button className="btn btn-success btn-sm" onClick={() => requestAct(r, 'approved')}>✓</button>{' '}
-                    <button className="btn btn-danger btn-sm" onClick={() => requestAct(r, 'rejected')}>✕</button>{' '}
-                    <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => requestAct(r, 'revision')}>↩</button>
+                    <button className="btn btn-success btn-sm" onClick={() => requestAct(r, 'approved')}><Icon name="check" size={13} /></button>{' '}
+                    <button className="btn btn-danger btn-sm" onClick={() => requestAct(r, 'rejected')}><Icon name="x" size={13} /></button>{' '}
+                    <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => requestAct(r, 'revision')}><Icon name="undo" size={13} /></button>
                   </td>
                 </tr>
               ))}
@@ -1332,13 +1336,13 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
     verified: {
       label: 'Verifikasi',
       color: 'var(--success)',
-      icon: '✓',
+      icon: <Icon name="check" size={28} />,
       desc: (row) => `Konfirmasi bahwa dana sebesar ${rupiah(row?.total_amount)} untuk ${row?.request_no} sudah benar-benar ditransfer/dicairkan ke pengaju. Pengajuan akan ditutup sebagai "Terverifikasi".`,
     },
     revision: {
       label: 'Kembalikan',
       color: '#b35900',
-      icon: '↩',
+      icon: <Icon name="undo" size={28} />,
       desc: () => 'Pengajuan dikembalikan untuk revisi (misalnya bukti transaksi kurang lengkap/sesuai).',
     },
   }
@@ -1385,9 +1389,9 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
                         <QRBadge value={trackUrl(r.request_no)} label={`Scan untuk lacak: ${r.request_no}`} />
                         <div>
                           <strong style={{ fontSize: 13 }}>Checklist Verifikasi</strong>
-                          <div className="checklist-line">☐ Struk/bukti sesuai nominal</div>
-                          <div className="checklist-line">☐ Tidak ada duplikasi pengajuan</div>
-                          <div className="checklist-line">☐ Sesuai budget department</div>
+                          <div className="checklist-line"><Icon name="square" size={12} style={{ marginRight: 5 }} /> Struk/bukti sesuai nominal</div>
+                          <div className="checklist-line"><Icon name="square" size={12} style={{ marginRight: 5 }} /> Tidak ada duplikasi pengajuan</div>
+                          <div className="checklist-line"><Icon name="square" size={12} style={{ marginRight: 5 }} /> Sesuai budget department</div>
                           <strong style={{ fontSize: 13, display: 'block', marginTop: 8 }}>File Bukti Transaksi</strong>
                           {(attMap[r.id] || []).length === 0 ? (
                             <div className="checklist-line">Tidak ada file diupload oleh employee.</div>
@@ -1683,8 +1687,8 @@ function CashBalance({ profile, refreshKey, onActed }) {
                   <td>{t.note || '—'}</td>
                   <td>{profilesById[t.created_by]?.full_name || '—'}</td>
                   <td>
-                    <button className="btn btn-sm" style={{ background: '#1f8a4c', color: '#fff' }} onClick={() => handlePrintTopup(t)}>
-                      🖨 Cetak Slip
+                    <button className="btn btn-sm" style={{ background: '#1f8a4c', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => handlePrintTopup(t)}>
+                      <Icon name="printer" size={13} /> Cetak Slip
                     </button>
                   </td>
                 </tr>
@@ -1703,7 +1707,7 @@ function CashBalance({ profile, refreshKey, onActed }) {
       {showConfirm && (
         <div className="modal-overlay" onClick={() => !saving && setShowConfirm(false)}>
           <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="confirm-icon" style={{ color: '#1f8a4c' }}>💰</div>
+            <div className="confirm-icon" style={{ color: '#1f8a4c' }}><Icon name="wallet" size={30} /></div>
             <h3 className="confirm-title">Konfirmasi Isi Ulang Saldo Kas</h3>
             <p className="confirm-desc">Pastikan data di bawah ini sudah benar sebelum disimpan.</p>
 
@@ -2045,7 +2049,7 @@ function CashFlowReport({ profile, refreshKey }) {
       {/* ---- Filter Laporan Arus Kas ---- */}
       <div className="filter-panel">
         <div className="filter-panel-head">
-          <div className="filter-title"><span className="filter-icon">⚲</span> Filter Laporan</div>
+          <div className="filter-title"><span className="filter-icon"><Icon name="filter" size={13} /></span> Filter Laporan</div>
           {hasActiveFilter && <span className="filter-clear-all" onClick={resetFilters}>Hapus semua filter</span>}
         </div>
         <div className="filter-grid">
@@ -2068,9 +2072,9 @@ function CashFlowReport({ profile, refreshKey }) {
         </div>
         {hasActiveFilter && (
           <div className="chip-row">
-            {filterType !== 'all' && <span className="chip">{filterType === 'in' ? 'Kas Masuk' : 'Kas Keluar'}<span className="chip-x" onClick={() => setFilterType('all')}>✕</span></span>}
-            {dateFrom && <span className="chip">Dari {dateFrom}<span className="chip-x" onClick={() => setDateFrom('')}>✕</span></span>}
-            {dateTo && <span className="chip">Sampai {dateTo}<span className="chip-x" onClick={() => setDateTo('')}>✕</span></span>}
+            {filterType !== 'all' && <span className="chip">{filterType === 'in' ? 'Kas Masuk' : 'Kas Keluar'}<span className="chip-x" onClick={() => setFilterType('all')}><Icon name="x" size={10} /></span></span>}
+            {dateFrom && <span className="chip">Dari {dateFrom}<span className="chip-x" onClick={() => setDateFrom('')}><Icon name="x" size={10} /></span></span>}
+            {dateTo && <span className="chip">Sampai {dateTo}<span className="chip-x" onClick={() => setDateTo('')}><Icon name="x" size={10} /></span></span>}
           </div>
         )}
       </div>
@@ -2083,19 +2087,19 @@ function CashFlowReport({ profile, refreshKey }) {
           <div className="bulk-actions">
             <button
               className="btn btn-sm"
-              style={{ background: '#0f6e6e', color: '#fff' }}
+              style={{ background: '#0f6e6e', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 5 }}
               disabled={exportingExcel || filteredLedger.length === 0}
               onClick={handleExportExcel}
             >
-              {exportingExcel ? <><span className="spinner" />Menyiapkan...</> : '📊 Export Excel'}
+              {exportingExcel ? <><span className="spinner" />Menyiapkan...</> : <><Icon name="barChart" size={13} /> Export Excel</>}
             </button>
             <button
               className="btn btn-sm"
-              style={{ background: '#14213d', color: '#fff' }}
+              style={{ background: '#14213d', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 5 }}
               disabled={exportingPdf || filteredLedger.length === 0}
               onClick={handleExportPdf}
             >
-              {exportingPdf ? <><span className="spinner" />Menyiapkan...</> : '🖨 Export PDF'}
+              {exportingPdf ? <><span className="spinner" />Menyiapkan...</> : <><Icon name="printer" size={13} /> Export PDF</>}
             </button>
           </div>
         </div>
@@ -2297,14 +2301,14 @@ function MyProfile({ profile, onUpdated }) {
         )}
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-          <button className="btn btn-primary" disabled={saving} onClick={saveDrawing}>
-            {saving ? 'Menyimpan...' : '✓ Simpan Tanda Tangan'}
+          <button className="btn btn-primary" disabled={saving} onClick={saveDrawing} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {saving ? 'Menyimpan...' : <><Icon name="check" size={14} /> Simpan Tanda Tangan</>}
           </button>
           <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} disabled={saving} onClick={clearCanvas}>
             Bersihkan Kanvas
           </button>
-          <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} disabled={saving} onClick={() => fileInputRef.current?.click()}>
-            📁 Unggah Gambar
+          <button className="btn btn-sm" style={{ background: '#eee', color: '#555', display: 'inline-flex', alignItems: 'center', gap: 5 }} disabled={saving} onClick={() => fileInputRef.current?.click()}>
+            <Icon name="upload" size={12} /> Unggah Gambar
           </button>
           {signatureUrl && (
             <button className="btn btn-sm btn-danger" disabled={saving} onClick={removeSignature}>
@@ -2625,7 +2629,7 @@ function Dashboard({ refreshKey, profile }) {
     <>
       <div className="filter-panel">
         <div className="filter-panel-head">
-          <div className="filter-title"><span className="filter-icon">⚲</span> Filter Data</div>
+          <div className="filter-title"><span className="filter-icon"><Icon name="filter" size={13} /></span> Filter Data</div>
           {activeChips.length > 0 && (
             <span className="filter-clear-all" onClick={resetFilters}>Hapus semua filter</span>
           )}
@@ -2633,7 +2637,7 @@ function Dashboard({ refreshKey, profile }) {
 
         {/* Search bar */}
         <div className="search-bar-wrap">
-          <span className="search-icon">🔍</span>
+          <span className="search-icon"><Icon name="search" size={14} /></span>
           <input
             className="search-bar-input"
             type="text"
@@ -2642,7 +2646,7 @@ function Dashboard({ refreshKey, profile }) {
             onChange={(e) => setSearch(e.target.value)}
           />
           {search && (
-            <span className="search-clear" onClick={() => setSearch('')}>✕</span>
+            <span className="search-clear" onClick={() => setSearch('')}><Icon name="x" size={12} /></span>
           )}
         </div>
 
@@ -2683,7 +2687,7 @@ function Dashboard({ refreshKey, profile }) {
             {activeChips.map((c) => (
               <span className="chip" key={c.key}>
                 {c.label}
-                <span className="chip-x" onClick={c.clear}>✕</span>
+                <span className="chip-x" onClick={c.clear}><Icon name="x" size={10} /></span>
               </span>
             ))}
           </div>
@@ -2710,7 +2714,7 @@ function Dashboard({ refreshKey, profile }) {
       {!loadingData && (
         <div className="chart-grid">
           <div className="card chart-card">
-            <h3>📈 Tren Pengeluaran Terverifikasi (6 Bulan Terakhir)</h3>
+            <h3><Icon name="trendingUp" size={16} style={{ marginRight: 6 }} /> Tren Pengeluaran Terverifikasi (6 Bulan Terakhir)</h3>
             <MonthlyBarChart data={monthlyData} />
           </div>
           <div className="card chart-card">
@@ -2733,26 +2737,26 @@ function Dashboard({ refreshKey, profile }) {
             <div className="bulk-actions">
               <button
                 className="btn btn-sm"
-                style={{ background: '#14213d', color: '#fff' }}
+                style={{ background: '#14213d', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 5 }}
                 disabled={bulkPrinting || selectedPrintableRows.length === 0}
                 onClick={() => handleBulkPrint(false)}
                 title={selectedPrintableRows.length === 0 ? 'Tidak ada dokumen berstatus Terverifikasi pada seleksi ini' : ''}
               >
-                {bulkPrinting ? <><span className="spinner" />Menyiapkan...</> : `🖨 Print Slip (${selectedPrintableRows.length})`}
+                {bulkPrinting ? <><span className="spinner" />Menyiapkan...</> : <><Icon name="printer" size={13} /> Print Slip ({selectedPrintableRows.length})</>}
               </button>
               <button
                 className="btn btn-sm"
-                style={{ background: '#0f6e6e', color: '#fff' }}
+                style={{ background: '#0f6e6e', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 5 }}
                 disabled={exporting}
                 onClick={handleExportExcel}
               >
-                {exporting ? <><span className="spinner" />Menyiapkan...</> : '📊 Export Excel'}
+                {exporting ? <><span className="spinner" />Menyiapkan...</> : <><Icon name="barChart" size={13} /> Export Excel</>}
               </button>
               <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} onClick={() => setSelectedPrintIds([])}>Batal Pilih</button>
             </div>
             {selectedIgnoredCount > 0 && (
-              <div style={{ flexBasis: '100%', fontSize: 12, color: '#ffe9b3' }}>
-                ⚠ {selectedIgnoredCount} baris terpilih belum berstatus <strong>Terverifikasi</strong> — akan diabaikan saat Print Slip (tetap ikut di Export Excel).
+              <div style={{ flexBasis: '100%', fontSize: 12, color: '#ffe9b3', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Icon name="alertTriangle" size={13} /> {selectedIgnoredCount} baris terpilih belum berstatus <strong>Terverifikasi</strong> — akan diabaikan saat Print Slip (tetap ikut di Export Excel).
               </div>
             )}
           </div>
@@ -2801,10 +2805,10 @@ function Dashboard({ refreshKey, profile }) {
                     {r.status === 'verified' && (isFinanceOrAdmin || r.profiles?.department === profile.department) && (
                       <button
                         className="btn btn-sm"
-                        style={{ background: '#14213d', color: '#fff', whiteSpace: 'nowrap' }}
+                        style={{ background: '#14213d', color: '#fff', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5 }}
                         onClick={() => printSlipShared(supabase, r, false)}
                       >
-                        🖨 Print Slip
+                        <Icon name="printer" size={13} /> Print Slip
                       </button>
                     )}
                   </td>
@@ -2824,22 +2828,6 @@ function Dashboard({ refreshKey, profile }) {
 }
 
 // ---------------------------------------------------------------- MAIN APP ----
-// ---- SVG Icons ----
-const Ico = {
-  dashboard:  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
-  submit:     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>,
-  mine:       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
-  approval:   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
-  finance:    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>,
-  cash:       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 6v12M18 6v12"/></svg>,
-  admin:      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>,
-  signature:  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17c2-1 3-3 4-5 1.5-3 2-6 3.5-6S12 9 13 12c1 3 2 5 4 5 1.3 0 2-1 3-2"/><path d="M3 21h18"/></svg>,
-  logout:     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
-  menu:       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>,
-  close:      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
-  sun:        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>,
-  moon:       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
-}
 
 const PAGE_TITLE = {
   dashboard:              'Dashboard',

@@ -830,12 +830,19 @@ td input[type="checkbox"], th input[type="checkbox"] {
 }
 .myreq-search input {
   flex: 1;
-  padding: 9px 12px;
+  padding: 9px 12px 9px 34px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   font-size: 13px;
   font-family: inherit;
 }
+.myreq-search-box {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+.myreq-search-box .search-icon { left: 11px; color: var(--text-muted); }
 .myreq-search input:focus {
   outline: none;
   border-color: var(--teal);
@@ -1284,7 +1291,7 @@ tbody tr:hover .badge {
   background: transparent;
   border: none;
   cursor: pointer;
-  font-size: 18px;
+  color: var(--text-muted);
   padding: 6px;
   border-radius: 8px;
   position: relative;
@@ -1361,7 +1368,7 @@ tbody tr:hover .badge {
 }
 .notif-item:last-child { border-bottom: none; }
 .notif-item:hover { background: var(--teal-light); }
-.notif-item-icon { font-size: 15px; flex-shrink: 0; }
+.notif-item-icon { display: flex; align-items: center; flex-shrink: 0; }
 .notif-item-body {
   display: flex;
   flex-direction: column;
@@ -1745,7 +1752,9 @@ tbody tr:hover .badge {
 .search-icon {
   position: absolute;
   left: 12px;
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
   pointer-events: none;
   opacity: 0.8;
 }
@@ -1769,10 +1778,10 @@ tbody tr:hover .badge {
 .search-clear {
   position: absolute;
   right: 12px;
-  font-size: 12px;
+  display: flex;
+  align-items: center;
   color: rgba(255,255,255,0.7);
   cursor: pointer;
-  font-weight: 700;
   transition: color 0.12s;
 }
 .search-clear:hover { color: #fff; }

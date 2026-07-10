@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from './supabaseClient'
 import Pagination from './Pagination'
+import Icon from './icons.jsx'
 
 const ROLES = ['employee', 'supervisor', 'manager', 'admin']
 
@@ -62,7 +63,7 @@ function useConfirm() {
     <div className="modal-overlay" onClick={() => settle(false)}>
       <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
         <div className="confirm-icon" style={{ color: state.danger ? '#c0392b' : '#0f6e6e' }}>
-          {state.danger ? '⚠' : '?'}
+          {state.danger ? <Icon name="alertTriangle" size={30} /> : '?'}
         </div>
         <h3 className="confirm-title">{state.title}</h3>
         <p className="confirm-desc" style={{ whiteSpace: 'pre-line' }}>{state.message}</p>
@@ -90,7 +91,7 @@ function BulkBar({ count, onClear, children }) {
   if (count === 0) return null
   return (
     <div className="bulk-bar">
-      <div className="bulk-bar-count">✅ {count} data terpilih</div>
+      <div className="bulk-bar-count" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="check" size={13} /> {count} data terpilih</div>
       <div className="bulk-bar-actions">{children}</div>
       <button className="btn btn-sm bulk-bar-clear" onClick={onClear}>Batal Pilih</button>
     </div>
@@ -274,7 +275,7 @@ function AdminUsers() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
-        <h3 className="admin-section-title" style={{ margin: 0, border: 'none', padding: 0 }}>👥 Manajemen User ({users.length})</h3>
+        <h3 className="admin-section-title" style={{ margin: 0, border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: 7 }}><Icon name="users" size={16} /> Manajemen User ({users.length})</h3>
         <button className="btn btn-primary btn-sm" onClick={() => { setShowCreate(!showCreate); setMsg({ text: '', type: '' }) }}>
           {showCreate ? 'Tutup' : '+ Buat Akun Baru'}
         </button>
@@ -324,7 +325,7 @@ function AdminUsers() {
           {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
         <button className="btn btn-primary btn-sm" onClick={bulkChangeRole} disabled={loading}>Ubah Role</button>
-        <button className="btn btn-danger btn-sm" onClick={bulkDeleteUsers} disabled={loading}>🗑 Hapus Terpilih</button>
+        <button className="btn btn-danger btn-sm" onClick={bulkDeleteUsers} disabled={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon name="trash" size={12} /> Hapus Terpilih</button>
       </BulkBar>
 
       <div className="table-scroll">
@@ -383,7 +384,7 @@ function AdminUsers() {
       {pwModal && (
         <div className="modal-overlay" onClick={() => setPwModal(null)}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-close" onClick={() => setPwModal(null)}>✕</div>
+            <div className="modal-close" onClick={() => setPwModal(null)}><Icon name="x" size={16} /></div>
             <h3 style={{ marginTop: 0 }}>Reset Password</h3>
             <div className="checklist-line" style={{ marginBottom: 12 }}>{pwModal.email}</div>
             <form onSubmit={handleResetPw}>
@@ -585,7 +586,7 @@ function AdminTransactions() {
 
   return (
     <div>
-      <h3 className="admin-section-title">📋 Manajemen Transaksi ({mergedRows.length})</h3>
+      <h3 className="admin-section-title" style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Icon name="clipboard" size={16} /> Manajemen Transaksi ({mergedRows.length})</h3>
       {msg && <div className="admin-msg">{msg}</div>}
 
       <BulkBar count={selected.size} onClear={clearSelection}>
@@ -593,7 +594,7 @@ function AdminTransactions() {
           {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
         </select>
         <button className="btn btn-primary btn-sm" onClick={bulkChangeStatus}>Ubah Status</button>
-        <button className="btn btn-danger btn-sm" onClick={bulkDeleteTransactions}>🗑 Hapus Terpilih</button>
+        <button className="btn btn-danger btn-sm" onClick={bulkDeleteTransactions} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon name="trash" size={12} /> Hapus Terpilih</button>
       </BulkBar>
 
       <div className="table-scroll">
@@ -623,7 +624,7 @@ function AdminTransactions() {
                     )}{' '}
                     {isTopup ? (r.topup_no || '—') : r.request_no}
                   </td>
-                  <td>{isTopup ? `↑ ${profiles[r.created_by] || '—'}` : (profiles[r.employee_id] || '—')}</td>
+                  <td>{isTopup ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="arrowUp" size={11} /> {profiles[r.created_by] || '—'}</span> : (profiles[r.employee_id] || '—')}</td>
                   <td>{isTopup ? r.topup_date : r.request_date}</td>
                   {editing === key ? (
                     isTopup ? (
@@ -654,7 +655,7 @@ function AdminTransactions() {
                   ) : (
                     <>
                       <td>{rupiah(isTopup ? r.amount : r.total_amount)}</td>
-                      <td>{isTopup ? <span className="badge badge-topup">↑ Kas Masuk</span> : <span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span>}</td>
+                      <td>{isTopup ? <span className="badge badge-topup" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="arrowUp" size={10} /> Kas Masuk</span> : <span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span>}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>
                         <button className="btn btn-sm" style={{ background: '#e8f0fe', color: '#1a56db' }} onClick={() => startEdit(row)}>Edit</button>{' '}
                         <button className="btn btn-danger btn-sm" onClick={() => deleteTransaction(row)}>Hapus</button>
@@ -816,10 +817,10 @@ function AdminHistory() {
 
   return (
     <div>
-      <h3 className="admin-section-title">📜 Riwayat Approval ({mergedRows.length})</h3>
+      <h3 className="admin-section-title" style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Icon name="history" size={16} /> Riwayat Approval ({mergedRows.length})</h3>
 
       <BulkBar count={selected.size} onClear={clearSelection}>
-        <button className="btn btn-danger btn-sm" onClick={bulkDeleteHistory}>🗑 Hapus Terpilih</button>
+        <button className="btn btn-danger btn-sm" onClick={bulkDeleteHistory} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon name="trash" size={12} /> Hapus Terpilih</button>
       </BulkBar>
 
       <div className="table-scroll">
@@ -843,7 +844,7 @@ function AdminHistory() {
                 <td style={{ whiteSpace: 'nowrap', fontSize: 11 }}>{new Date(h.created_at).toLocaleString('id-ID')}</td>
                 <td>{isTopup ? (h.topup_no || '—') : (reqNos[h.reimbursement_id] || '—')}</td>
                 <td>{isTopup ? (profiles[h.created_by] || '—') : (profiles[h.approver_id] || '—')}</td>
-                <td>{isTopup ? <span className="badge badge-topup">↑ kas_masuk</span> : <span className={`badge badge-${h.action}`}>{h.action}</span>}</td>
+                <td>{isTopup ? <span className="badge badge-topup" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="arrowUp" size={10} /> kas_masuk</span> : <span className={`badge badge-${h.action}`}>{h.action}</span>}</td>
                 <td style={{ maxWidth: 200, fontSize: 12 }}>{isTopup ? (h.note || '—') : (h.notes || '—')}</td>
                 <td><button className="btn btn-danger btn-sm" onClick={() => deleteHistory(row)}>Hapus</button></td>
               </tr>
@@ -865,9 +866,9 @@ function AdminHistory() {
 
 // ---- MAIN ADMIN PANEL ----
 const ADMIN_TABS = [
-  { key: 'users', label: '👥 User' },
-  { key: 'transactions', label: '📋 Transaksi' },
-  { key: 'history', label: '📜 Riwayat' },
+  { key: 'users', label: <><Icon name="users" size={13} /> User</> },
+  { key: 'transactions', label: <><Icon name="clipboard" size={13} /> Transaksi</> },
+  { key: 'history', label: <><Icon name="history" size={13} /> Riwayat</> },
 ]
 
 export default function AdminPanel() {
@@ -876,7 +877,7 @@ export default function AdminPanel() {
   return (
     <div>
       <div className="admin-header">
-        <div className="admin-title">⚙️ Admin Panel</div>
+        <div className="admin-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Icon name="admin" size={18} /> Admin Panel</div>
         <div className="admin-subtitle">Kontrol penuh database PCRS</div>
       </div>
 
