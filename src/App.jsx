@@ -2837,6 +2837,8 @@ const Ico = {
   logout:     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
   menu:       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>,
   close:      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+  sun:        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>,
+  moon:       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
 }
 
 const PAGE_TITLE = {
@@ -2860,6 +2862,28 @@ export default function App() {
   const [submitMenuOpen, setSubmitMenuOpen] = useState(true)
   const [mobileSubmitOpen, setMobileSubmitOpen] = useState(false)
   const bump = useCallback(() => setRefreshKey((k) => k + 1), [])
+
+  // ---- DARK MODE ----
+  // Preferensi disimpan di localStorage; kalau belum pernah diset, ikuti
+  // preferensi sistem (prefers-color-scheme). Class "dark" ditaruh di
+  // <html> (bukan hanya .app-shell) supaya layar login yang tampil
+  // sebelum ada session pun ikut menyesuaikan.
+  const [darkMode, setDarkMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pcrs-theme')
+      if (saved) return saved === 'dark'
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+    } catch {
+      return false
+    }
+  })
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode)
+    try { localStorage.setItem('pcrs-theme', darkMode ? 'dark' : 'light') } catch {}
+  }, [darkMode])
+
+  const toggleDarkMode = useCallback(() => setDarkMode((d) => !d), [])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
@@ -3076,6 +3100,9 @@ export default function App() {
           <button className="hamburger" onClick={() => setSidebarOpen(true)}>{Ico.menu}</button>
           <div className="mobile-title">{PAGE_TITLE[tab]}</div>
           <div className="mobile-header-actions">
+            <button className="theme-toggle theme-toggle-mobile" onClick={toggleDarkMode} title={darkMode ? 'Ganti ke Mode Terang' : 'Ganti ke Mode Gelap'}>
+              {darkMode ? Ico.sun : Ico.moon}
+            </button>
             <NotificationBell profile={profile} refreshKey={refreshKey} onNavigate={navigate} />
             <button className="mobile-logout" onClick={() => supabase.auth.signOut()} title="Logout">
               {Ico.logout}
@@ -3089,7 +3116,12 @@ export default function App() {
             <h1 className="page-title">{PAGE_TITLE[tab]}</h1>
             <div className="page-breadcrumb">PCRS / {PAGE_TITLE[tab]}</div>
           </div>
-          <NotificationBell profile={profile} refreshKey={refreshKey} onNavigate={navigate} />
+          <div className="page-header-actions">
+            <button className="theme-toggle" onClick={toggleDarkMode} title={darkMode ? 'Ganti ke Mode Terang' : 'Ganti ke Mode Gelap'}>
+              {darkMode ? Ico.sun : Ico.moon}
+            </button>
+            <NotificationBell profile={profile} refreshKey={refreshKey} onNavigate={navigate} />
+          </div>
         </div>
 
         <div className="content-area">

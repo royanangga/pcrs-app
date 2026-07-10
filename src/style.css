@@ -12,7 +12,30 @@
   --success: #1f8a4c;
   --radius: 10px;
   --sidebar-w: 240px;
+  /* Warna judul/label yang biasanya dulu langsung pakai var(--navy).
+     Dipisah jadi variabel sendiri supaya di dark mode bisa jadi terang,
+     sementara var(--navy) tetap gelap untuk dipakai sebagai background
+     (sidebar, login screen, dll — yang memang harus tetap gelap di kedua tema). */
+  --heading: var(--navy);
+  --row-hover: #f0f4fa;
 }
+
+/* ================================================================
+   DARK MODE — diaktifkan lewat class "dark" di <html>, di-toggle dari
+   tombol matahari/bulan di header. Preferensi disimpan di localStorage
+   (lihat App.jsx), fallback ke prefers-color-scheme sistem.
+   ================================================================ */
+html.dark {
+  --bg: #0f1420;
+  --card: #1a2233;
+  --border: #2c3650;
+  --text: #e3e7ef;
+  --text-muted: #8b93a7;
+  --heading: #e3e7ef;
+  --row-hover: #232d44;
+}
+html.dark img { opacity: 0.92; }
+
 
 * { box-sizing: border-box; }
 
@@ -193,7 +216,7 @@ body {
   width: 34px; height: 34px;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: 800; color: var(--navy);
+  font-size: 14px; font-weight: 800; color: var(--heading);
   flex-shrink: 0;
 }
 .sidebar-user-info { min-width: 0; }
@@ -253,7 +276,7 @@ body {
 .page-title {
   font-size: 22px;
   font-weight: 800;
-  color: var(--navy);
+  color: var(--heading);
   margin: 0 0 2px;
   letter-spacing: -0.2px;
 }
@@ -262,6 +285,29 @@ body {
   color: var(--text-muted);
   letter-spacing: 0.3px;
 }
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---- Dark mode toggle button ---- */
+.theme-toggle {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, transform 0.15s;
+  flex-shrink: 0;
+}
+.theme-toggle:hover { color: var(--teal); border-color: var(--teal); transform: rotate(15deg); }
+.theme-toggle-mobile { width: 30px; height: 30px; border: none; background: transparent; }
 
 .content-area { padding: 18px 28px 32px; min-width: 0; width: 100%; max-width: 1440px; margin: 0 auto; }
 
@@ -309,7 +355,7 @@ body {
   margin-bottom: 16px;
 }
 
-.card h3 { margin-top: 0; font-size: 15px; color: var(--navy); }
+.card h3 { margin-top: 0; font-size: 15px; color: var(--heading); }
 
 .grid-kpi {
   display: grid;
@@ -324,7 +370,7 @@ body {
   padding: 16px;
 }
 .kpi-box .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
-.kpi-box .value { font-size: 24px; font-weight: 700; color: var(--navy); margin-top: 4px; }
+.kpi-box .value { font-size: 24px; font-weight: 700; color: var(--heading); margin-top: 4px; }
 
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); }
@@ -490,7 +536,7 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
   z-index: 50;
 }
 .modal-box {
-  background: #fff;
+  background: var(--card);
   border-radius: 12px;
   padding: 24px;
   width: 320px;
@@ -520,7 +566,7 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
   justify-content: center;
   margin: 0 auto 14px;
 }
-.confirm-title { margin: 0 0 6px; font-size: 16px; color: var(--navy); }
+.confirm-title { margin: 0 0 6px; font-size: 16px; color: var(--heading); }
 .confirm-desc { font-size: 13px; color: var(--text-muted); margin: 0 0 16px; }
 .confirm-detail {
   background: #f6f7f9;
@@ -607,7 +653,7 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
 
 .admin-section-title {
   font-size: 14px;
-  color: var(--navy);
+  color: var(--heading);
   margin: 0 0 14px 0;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--border);
@@ -687,7 +733,7 @@ td input[type="checkbox"], th input[type="checkbox"] {
   padding: 5px 8px;
 }
 .pagination-nav .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.pagination-page { font-size: 12px; font-weight: 600; color: var(--navy); padding: 0 6px; white-space: nowrap; }
+.pagination-page { font-size: 12px; font-weight: 600; color: var(--heading); padding: 0 6px; white-space: nowrap; }
 
 /* ---- Search box: Pengajuan Saya ---- */
 .myreq-search {
@@ -717,7 +763,7 @@ td input[type="checkbox"], th input[type="checkbox"] {
 .login-logo {
   font-size: 28px;
   font-weight: 800;
-  color: var(--navy);
+  color: var(--heading);
   letter-spacing: 1px;
 }
 .login-note {
@@ -760,6 +806,8 @@ input, select, textarea {
   border-radius: 6px;
   font-size: 13px;
   font-family: inherit;
+  background: var(--card);
+  color: var(--text);
 }
 
 .item-row { display: grid; grid-template-columns: 1fr 1fr 1.5fr 1fr auto; gap: 8px; align-items: end; margin-top: 8px; }
@@ -772,12 +820,12 @@ input, select, textarea {
   background: var(--navy);
 }
 .login-card {
-  background: #fff;
+  background: var(--card);
   border-radius: 12px;
   padding: 32px;
   width: 360px;
 }
-.login-card h2 { margin-top: 0; color: var(--navy); }
+.login-card h2 { margin-top: 0; color: var(--heading); }
 .login-card .sub { color: var(--text-muted); font-size: 13px; margin-bottom: 18px; }
 .error-text { color: var(--danger); font-size: 12px; margin-top: 8px; }
 .toggle-link { text-align: center; margin-top: 14px; font-size: 13px; color: var(--teal); cursor: pointer; }
@@ -970,7 +1018,7 @@ tbody tr {
   transition: background 0.13s ease;
 }
 tbody tr:hover {
-  background: #f0f4fa;
+  background: var(--row-hover);
 }
 
 /* ========== INPUT FOCUS ========== */
@@ -993,7 +1041,7 @@ input:focus, select:focus, textarea:focus {
 .login-logo {
   font-size: 30px;
   font-weight: 800;
-  color: var(--navy);
+  color: var(--heading);
   letter-spacing: 1px;
   animation: fadeSlideDown 0.3s ease 0.1s both;
 }
@@ -1199,7 +1247,7 @@ tbody tr:hover .badge {
 .notif-dropdown-title {
   font-size: 13px;
   font-weight: 700;
-  color: var(--navy);
+  color: var(--heading);
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
 }
@@ -1276,7 +1324,7 @@ tbody tr:hover .badge {
     align-items: center;
     justify-content: space-between;
     padding: 12px 16px;
-    background: #fff;
+    background: var(--card);
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
@@ -1288,7 +1336,7 @@ tbody tr:hover .badge {
   .mobile-title {
     font-size: 15px;
     font-weight: 700;
-    color: var(--navy);
+    color: var(--heading);
   }
 
   /* Hide desktop page header on mobile */
@@ -1440,7 +1488,7 @@ tbody tr:hover .badge {
     position: fixed;
     left: 10px; right: 10px;
     bottom: calc(66px + env(safe-area-inset-bottom));
-    background: #fff;
+    background: var(--card);
     z-index: 261;
     border-radius: 14px;
     padding: 8px;
@@ -1541,7 +1589,7 @@ tbody tr:hover .badge {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  background: #fff;
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.13);
