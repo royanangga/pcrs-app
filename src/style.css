@@ -364,6 +364,7 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
 .badge-rejected { background: #fbe2df; color: var(--danger); }
 .badge-revision { background: #ffe6cc; color: #b35900; }
 .badge-verified { background: #d6e9ff; color: #1457b3; }
+.badge-topup { background: #d9f4e3; color: #1a7a3d; }
 
 .attachment-list { list-style: none; padding: 0; margin: 6px 0; font-size: 12px; }
 .attachment-list li { margin-bottom: 4px; }

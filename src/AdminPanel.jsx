@@ -351,6 +351,7 @@ function AdminUsers() {
 // ---- sub-tab: TRANSACTION MANAGEMENT ----
 function AdminTransactions() {
   const [rows, setRows] = useState([])
+  const [topups, setTopups] = useState([])
   const [profiles, setProfiles] = useState({})
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState({})
@@ -373,6 +374,12 @@ function AdminTransactions() {
       .order('created_at', { ascending: false })
     setRows(data || [])
 
+    const { data: topupData } = await supabase
+      .from('cash_topups')
+      .select('*')
+      .order('created_at', { ascending: false })
+    setTopups(topupData || [])
+
     const { data: profs } = await supabase.from('profiles').select('id, full_name')
     const map = {}
     ;(profs || []).forEach((p) => { map[p.id] = p.full_name })
@@ -381,20 +388,30 @@ function AdminTransactions() {
 
   useEffect(() => { load() }, [load])
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  // Gabungkan pengajuan reimbursement (kas keluar) & pengisian kas (kas
+  // masuk) jadi satu daftar transaksi, diurutkan berdasarkan waktu dibuat
+  // terbaru. Setiap baris ditandai `recordType` supaya kolom Status/Aksi
+  // bisa tampil beda sesuai jenisnya, tapi tetap satu tabel yang sama.
+  const mergedRows = useMemo(() => {
+    const reimbRows = rows.map((r) => ({ recordType: 'reimb', sortTs: new Date(r.created_at).getTime(), data: r }))
+    const topupRows = topups.map((t) => ({ recordType: 'topup', sortTs: new Date(t.created_at).getTime(), data: t }))
+    return [...reimbRows, ...topupRows].sort((a, b) => b.sortTs - a.sortTs)
+  }, [rows, topups])
+
+  const totalPages = Math.max(1, Math.ceil(mergedRows.length / pageSize))
   useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
 
   const pageRows = useMemo(() => {
     const start = (page - 1) * pageSize
-    return rows.slice(start, start + pageSize)
-  }, [rows, page, pageSize])
+    return mergedRows.slice(start, start + pageSize)
+  }, [mergedRows, page, pageSize])
 
-  const allOnPageSelected = pageRows.length > 0 && pageRows.every((r) => selected.has(r.id))
+  const allOnPageSelected = pageRows.length > 0 && pageRows.every((row) => selected.has(row.recordType + '-' + row.data.id))
 
-  function toggleOne(id) {
+  function toggleOne(key) {
     setSelected((s) => {
       const next = new Set(s)
-      if (next.has(id)) next.delete(id); else next.add(id)
+      if (next.has(key)) next.delete(key); else next.add(key)
       return next
     })
   }
@@ -402,8 +419,8 @@ function AdminTransactions() {
   function toggleAllOnPage() {
     setSelected((s) => {
       const next = new Set(s)
-      if (allOnPageSelected) pageRows.forEach((r) => next.delete(r.id))
-      else pageRows.forEach((r) => next.add(r.id))
+      if (allOnPageSelected) pageRows.forEach((row) => next.delete(row.recordType + '-' + row.data.id))
+      else pageRows.forEach((row) => next.add(row.recordType + '-' + row.data.id))
       return next
     })
   }
@@ -419,24 +436,41 @@ function AdminTransactions() {
     }
   }
 
-  function startEdit(r) {
-    setEditing(r.id)
-    setForm({ status: r.status, total_amount: r.total_amount, required_role: r.required_role })
+  function startEdit(row) {
+    setEditing(row.recordType + '-' + row.data.id)
+    if (row.recordType === 'reimb') {
+      setForm({ status: row.data.status, total_amount: row.data.total_amount, required_role: row.data.required_role })
+    } else {
+      setForm({ amount: row.data.amount, note: row.data.note || '', topup_date: row.data.topup_date })
+    }
     setMsg('')
   }
 
-  async function saveEdit(id) {
-    const { error } = await supabase.from('reimbursements').update(form).eq('id', id)
-    if (error) { setMsg('Error: ' + error.message); return }
+  async function saveEdit(row) {
+    if (row.recordType === 'reimb') {
+      const { error } = await supabase.from('reimbursements').update(form).eq('id', row.data.id)
+      if (error) { setMsg('Error: ' + error.message); return }
+    } else {
+      const { error } = await supabase.from('cash_topups')
+        .update({ amount: form.amount, note: form.note || null, topup_date: form.topup_date })
+        .eq('id', row.data.id)
+      if (error) { setMsg('Error: ' + error.message); return }
+    }
     setEditing(null)
     setMsg('Transaksi berhasil diupdate.')
     load()
   }
 
-  async function deleteTransaction(id, no) {
-    if (!window.confirm(`Hapus transaksi "${no}"? Semua item, lampiran, dan riwayat approval juga akan dihapus.`)) return
-    const { error } = await supabase.from('reimbursements').delete().eq('id', id)
-    if (error) { setMsg('Error: ' + error.message); return }
+  async function deleteTransaction(row) {
+    if (row.recordType === 'reimb') {
+      if (!window.confirm(`Hapus transaksi "${row.data.request_no}"? Semua item, lampiran, dan riwayat approval juga akan dihapus.`)) return
+      const { error } = await supabase.from('reimbursements').delete().eq('id', row.data.id)
+      if (error) { setMsg('Error: ' + error.message); return }
+    } else {
+      if (!window.confirm(`Hapus pengisian kas "${row.data.topup_no || ''}"?`)) return
+      const { error } = await supabase.from('cash_topups').delete().eq('id', row.data.id)
+      if (error) { setMsg('Error: ' + error.message); return }
+    }
     setMsg('Transaksi dihapus.')
     load()
   }
@@ -454,9 +488,11 @@ function AdminTransactions() {
 
   // ---- bulk actions ----
   async function bulkChangeStatus() {
-    if (selected.size === 0) return
-    if (!window.confirm(`Ubah status ${selected.size} transaksi terpilih menjadi "${STATUS_LABEL[bulkStatus]}"?`)) return
     const ids = Array.from(selected)
+      .filter((key) => key.startsWith('reimb-'))
+      .map((key) => key.slice('reimb-'.length))
+    if (ids.length === 0) { setMsg('Pilih minimal satu transaksi reimbursement (ubah status tidak berlaku untuk pengisian kas).'); return }
+    if (!window.confirm(`Ubah status ${ids.length} transaksi terpilih menjadi "${STATUS_LABEL[bulkStatus]}"?`)) return
     const { error } = await supabase.from('reimbursements').update({ status: bulkStatus }).in('id', ids)
     if (error) setMsg('Gagal ubah status massal: ' + error.message)
     else setMsg(`Status ${ids.length} transaksi berhasil diubah.`)
@@ -467,17 +503,26 @@ function AdminTransactions() {
   async function bulkDeleteTransactions() {
     if (selected.size === 0) return
     if (!window.confirm(`Hapus ${selected.size} transaksi terpilih?\nSemua item, lampiran, dan riwayat approval terkait juga akan dihapus.`)) return
-    const ids = Array.from(selected)
-    const { error } = await supabase.from('reimbursements').delete().in('id', ids)
-    if (error) setMsg('Gagal hapus massal: ' + error.message)
-    else setMsg(`${ids.length} transaksi berhasil dihapus.`)
+    const keys = Array.from(selected)
+    const reimbIds = keys.filter((key) => key.startsWith('reimb-')).map((key) => key.slice('reimb-'.length))
+    const topupIds = keys.filter((key) => key.startsWith('topup-')).map((key) => key.slice('topup-'.length))
+    let errMsg = ''
+    if (reimbIds.length) {
+      const { error } = await supabase.from('reimbursements').delete().in('id', reimbIds)
+      if (error) errMsg += 'Gagal hapus reimbursement: ' + error.message + ' '
+    }
+    if (topupIds.length) {
+      const { error } = await supabase.from('cash_topups').delete().in('id', topupIds)
+      if (error) errMsg += 'Gagal hapus pengisian kas: ' + error.message
+    }
+    setMsg(errMsg || `${keys.length} transaksi berhasil dihapus.`)
     clearSelection()
     load()
   }
 
   return (
     <div>
-      <h3 className="admin-section-title">📋 Manajemen Transaksi ({rows.length})</h3>
+      <h3 className="admin-section-title">📋 Manajemen Transaksi ({mergedRows.length})</h3>
       {msg && <div className="admin-msg">{msg}</div>}
 
       <BulkBar count={selected.size} onClear={clearSelection}>
@@ -495,77 +540,97 @@ function AdminTransactions() {
             <th style={{ width: 32 }}>
               <input type="checkbox" checked={allOnPageSelected} onChange={toggleAllOnPage} />
             </th>
-            <th>No. Request</th><th>Employee</th><th>Tanggal</th><th>Total</th><th>Status</th><th>Aksi</th>
+            <th>No. Request / Ref</th><th>Employee</th><th>Tanggal</th><th>Total</th><th>Status</th><th>Aksi</th>
           </tr>
         </thead>
         <tbody>
-          {pageRows.map((r) => (
-            <React.Fragment key={r.id}>
-              <tr className={selected.has(r.id) ? 'row-selected' : ''}>
-                <td><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} /></td>
-                <td>
-                  <span className="detail-toggle" onClick={() => toggleItems(r.id)}>
-                    {openId === r.id ? '▼' : '▶'}
-                  </span>{' '}
-                  {r.request_no}
-                </td>
-                <td>{profiles[r.employee_id] || '—'}</td>
-                <td>{r.request_date}</td>
-                {editing === r.id ? (
-                  <>
-                    <td><input type="number" value={form.total_amount} onChange={(e) => setForm({ ...form, total_amount: e.target.value })} style={{ width: 110 }} /></td>
-                    <td>
-                      <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                        {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-                      </select>
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <button className="btn btn-success btn-sm" onClick={() => saveEdit(r.id)}>Simpan</button>{' '}
-                      <button className="btn btn-sm" style={{ background: '#eee' }} onClick={() => setEditing(null)}>Batal</button>
-                    </td>
-                  </>
-                ) : (
-                  <>
-                    <td>{rupiah(r.total_amount)}</td>
-                    <td><span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span></td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <button className="btn btn-sm" style={{ background: '#e8f0fe', color: '#1a56db' }} onClick={() => startEdit(r)}>Edit</button>{' '}
-                      <button className="btn btn-danger btn-sm" onClick={() => deleteTransaction(r.id, r.request_no)}>Hapus</button>
-                    </td>
-                  </>
-                )}
-              </tr>
-              {openId === r.id && (
-                <tr>
-                  <td colSpan={7}>
-                    <div className="admin-items-box">
-                      <strong style={{ fontSize: 12 }}>Detail Item</strong>
-                      {(items[r.id] || []).length === 0 ? (
-                        <div className="checklist-line">Tidak ada item.</div>
-                      ) : (
-                        <div className="table-scroll">
-                        <table style={{ marginTop: 6 }}>
-                          <thead><tr><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th>Nominal</th><th></th></tr></thead>
-                          <tbody>
-                            {(items[r.id] || []).map((it) => (
-                              <tr key={it.id}>
-                                <td>{it.expense_date}</td>
-                                <td>{it.category}</td>
-                                <td>{it.description || '—'}</td>
-                                <td>{rupiah(it.amount)}</td>
-                                <td><button className="btn btn-danger btn-sm" onClick={() => deleteItem(it.id, r.id)}>Hapus</button></td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        </div>
-                      )}
-                    </div>
+          {pageRows.map((row) => {
+            const key = row.recordType + '-' + row.data.id
+            const isTopup = row.recordType === 'topup'
+            const r = row.data
+            return (
+              <React.Fragment key={key}>
+                <tr className={selected.has(key) ? 'row-selected' : ''} style={isTopup ? { background: 'var(--success-bg, #f2fbf6)' } : undefined}>
+                  <td><input type="checkbox" checked={selected.has(key)} onChange={() => toggleOne(key)} /></td>
+                  <td>
+                    {!isTopup && (
+                      <span className="detail-toggle" onClick={() => toggleItems(r.id)}>
+                        {openId === r.id ? '▼' : '▶'}
+                      </span>
+                    )}{' '}
+                    {isTopup ? (r.topup_no || '—') : r.request_no}
                   </td>
+                  <td>{isTopup ? `↑ ${profiles[r.created_by] || '—'}` : (profiles[r.employee_id] || '—')}</td>
+                  <td>{isTopup ? r.topup_date : r.request_date}</td>
+                  {editing === key ? (
+                    isTopup ? (
+                      <>
+                        <td><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} style={{ width: 110 }} /></td>
+                        <td>
+                          <input type="date" value={form.topup_date} onChange={(e) => setForm({ ...form, topup_date: e.target.value })} style={{ width: 130 }} />
+                        </td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <button className="btn btn-success btn-sm" onClick={() => saveEdit(row)}>Simpan</button>{' '}
+                          <button className="btn btn-sm" style={{ background: '#eee' }} onClick={() => setEditing(null)}>Batal</button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td><input type="number" value={form.total_amount} onChange={(e) => setForm({ ...form, total_amount: e.target.value })} style={{ width: 110 }} /></td>
+                        <td>
+                          <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                            {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                          </select>
+                        </td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <button className="btn btn-success btn-sm" onClick={() => saveEdit(row)}>Simpan</button>{' '}
+                          <button className="btn btn-sm" style={{ background: '#eee' }} onClick={() => setEditing(null)}>Batal</button>
+                        </td>
+                      </>
+                    )
+                  ) : (
+                    <>
+                      <td>{rupiah(isTopup ? r.amount : r.total_amount)}</td>
+                      <td>{isTopup ? <span className="badge badge-topup">↑ Kas Masuk</span> : <span className={`badge badge-${r.status}`}>{STATUS_LABEL[r.status]}</span>}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <button className="btn btn-sm" style={{ background: '#e8f0fe', color: '#1a56db' }} onClick={() => startEdit(row)}>Edit</button>{' '}
+                        <button className="btn btn-danger btn-sm" onClick={() => deleteTransaction(row)}>Hapus</button>
+                      </td>
+                    </>
+                  )}
                 </tr>
-              )}
-            </React.Fragment>
-          ))}
+                {!isTopup && openId === r.id && (
+                  <tr>
+                    <td colSpan={7}>
+                      <div className="admin-items-box">
+                        <strong style={{ fontSize: 12 }}>Detail Item</strong>
+                        {(items[r.id] || []).length === 0 ? (
+                          <div className="checklist-line">Tidak ada item.</div>
+                        ) : (
+                          <div className="table-scroll">
+                          <table style={{ marginTop: 6 }}>
+                            <thead><tr><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th>Nominal</th><th></th></tr></thead>
+                            <tbody>
+                              {(items[r.id] || []).map((it) => (
+                                <tr key={it.id}>
+                                  <td>{it.expense_date}</td>
+                                  <td>{it.category}</td>
+                                  <td>{it.description || '—'}</td>
+                                  <td>{rupiah(it.amount)}</td>
+                                  <td><button className="btn btn-danger btn-sm" onClick={() => deleteItem(it.id, r.id)}>Hapus</button></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            )
+          })}
           {pageRows.length === 0 && (
             <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>Tidak ada data.</td></tr>
           )}
@@ -573,7 +638,7 @@ function AdminTransactions() {
       </table>
       </div>
 
-      <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={rows.length} />
+      <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={mergedRows.length} />
     </div>
   )
 }
@@ -581,6 +646,7 @@ function AdminTransactions() {
 // ---- sub-tab: APPROVAL HISTORY ----
 function AdminHistory() {
   const [rows, setRows] = useState([])
+  const [topups, setTopups] = useState([])
   const [profiles, setProfiles] = useState({})
   const [reqNos, setReqNos] = useState({})
 
@@ -599,6 +665,13 @@ function AdminHistory() {
       .limit(500)
     setRows(data || [])
 
+    const { data: topupData } = await supabase
+      .from('cash_topups')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500)
+    setTopups(topupData || [])
+
     const { data: profs } = await supabase.from('profiles').select('id, full_name')
     const pm = {}
     ;(profs || []).forEach((p) => { pm[p.id] = p.full_name })
@@ -612,20 +685,28 @@ function AdminHistory() {
 
   useEffect(() => { load() }, [load])
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  // Gabungkan riwayat approval (kas keluar) & riwayat pengisian kas (kas
+  // masuk) jadi satu daftar riwayat, diurutkan waktu terbaru dulu.
+  const mergedRows = useMemo(() => {
+    const histRows = rows.map((h) => ({ recordType: 'hist', sortTs: new Date(h.created_at).getTime(), data: h }))
+    const topupRows = topups.map((t) => ({ recordType: 'topup', sortTs: new Date(t.created_at).getTime(), data: t }))
+    return [...histRows, ...topupRows].sort((a, b) => b.sortTs - a.sortTs)
+  }, [rows, topups])
+
+  const totalPages = Math.max(1, Math.ceil(mergedRows.length / pageSize))
   useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
 
   const pageRows = useMemo(() => {
     const start = (page - 1) * pageSize
-    return rows.slice(start, start + pageSize)
-  }, [rows, page, pageSize])
+    return mergedRows.slice(start, start + pageSize)
+  }, [mergedRows, page, pageSize])
 
-  const allOnPageSelected = pageRows.length > 0 && pageRows.every((h) => selected.has(h.id))
+  const allOnPageSelected = pageRows.length > 0 && pageRows.every((row) => selected.has(row.recordType + '-' + row.data.id))
 
-  function toggleOne(id) {
+  function toggleOne(key) {
     setSelected((s) => {
       const next = new Set(s)
-      if (next.has(id)) next.delete(id); else next.add(id)
+      if (next.has(key)) next.delete(key); else next.add(key)
       return next
     })
   }
@@ -633,32 +714,40 @@ function AdminHistory() {
   function toggleAllOnPage() {
     setSelected((s) => {
       const next = new Set(s)
-      if (allOnPageSelected) pageRows.forEach((h) => next.delete(h.id))
-      else pageRows.forEach((h) => next.add(h.id))
+      if (allOnPageSelected) pageRows.forEach((row) => next.delete(row.recordType + '-' + row.data.id))
+      else pageRows.forEach((row) => next.add(row.recordType + '-' + row.data.id))
       return next
     })
   }
 
   function clearSelection() { setSelected(new Set()) }
 
-  async function deleteHistory(id) {
-    if (!window.confirm('Hapus riwayat ini?')) return
-    await supabase.from('approval_history').delete().eq('id', id)
+  async function deleteHistory(row) {
+    if (row.recordType === 'topup') {
+      if (!window.confirm('Hapus riwayat pengisian kas ini?')) return
+      await supabase.from('cash_topups').delete().eq('id', row.data.id)
+    } else {
+      if (!window.confirm('Hapus riwayat ini?')) return
+      await supabase.from('approval_history').delete().eq('id', row.data.id)
+    }
     load()
   }
 
   async function bulkDeleteHistory() {
     if (selected.size === 0) return
     if (!window.confirm(`Hapus ${selected.size} riwayat terpilih?`)) return
-    const ids = Array.from(selected)
-    await supabase.from('approval_history').delete().in('id', ids)
+    const keys = Array.from(selected)
+    const histIds = keys.filter((key) => key.startsWith('hist-')).map((key) => key.slice('hist-'.length))
+    const topupIds = keys.filter((key) => key.startsWith('topup-')).map((key) => key.slice('topup-'.length))
+    if (histIds.length) await supabase.from('approval_history').delete().in('id', histIds)
+    if (topupIds.length) await supabase.from('cash_topups').delete().in('id', topupIds)
     clearSelection()
     load()
   }
 
   return (
     <div>
-      <h3 className="admin-section-title">📜 Riwayat Approval ({rows.length})</h3>
+      <h3 className="admin-section-title">📜 Riwayat Approval ({mergedRows.length})</h3>
 
       <BulkBar count={selected.size} onClear={clearSelection}>
         <button className="btn btn-danger btn-sm" onClick={bulkDeleteHistory}>🗑 Hapus Terpilih</button>
@@ -671,21 +760,26 @@ function AdminHistory() {
             <th style={{ width: 32 }}>
               <input type="checkbox" checked={allOnPageSelected} onChange={toggleAllOnPage} />
             </th>
-            <th>Waktu</th><th>No. Request</th><th>Approver</th><th>Aksi</th><th>Catatan</th><th></th>
+            <th>Waktu</th><th>No. Request / Ref</th><th>Approver</th><th>Aksi</th><th>Catatan</th><th></th>
           </tr>
         </thead>
         <tbody>
-          {pageRows.map((h) => (
-            <tr key={h.id} className={selected.has(h.id) ? 'row-selected' : ''}>
-              <td><input type="checkbox" checked={selected.has(h.id)} onChange={() => toggleOne(h.id)} /></td>
-              <td style={{ whiteSpace: 'nowrap', fontSize: 11 }}>{new Date(h.created_at).toLocaleString('id-ID')}</td>
-              <td>{reqNos[h.reimbursement_id] || '—'}</td>
-              <td>{profiles[h.approver_id] || '—'}</td>
-              <td><span className={`badge badge-${h.action}`}>{h.action}</span></td>
-              <td style={{ maxWidth: 200, fontSize: 12 }}>{h.notes || '—'}</td>
-              <td><button className="btn btn-danger btn-sm" onClick={() => deleteHistory(h.id)}>Hapus</button></td>
-            </tr>
-          ))}
+          {pageRows.map((row) => {
+            const key = row.recordType + '-' + row.data.id
+            const isTopup = row.recordType === 'topup'
+            const h = row.data
+            return (
+              <tr key={key} className={selected.has(key) ? 'row-selected' : ''} style={isTopup ? { background: 'var(--success-bg, #f2fbf6)' } : undefined}>
+                <td><input type="checkbox" checked={selected.has(key)} onChange={() => toggleOne(key)} /></td>
+                <td style={{ whiteSpace: 'nowrap', fontSize: 11 }}>{new Date(h.created_at).toLocaleString('id-ID')}</td>
+                <td>{isTopup ? (h.topup_no || '—') : (reqNos[h.reimbursement_id] || '—')}</td>
+                <td>{isTopup ? (profiles[h.created_by] || '—') : (profiles[h.approver_id] || '—')}</td>
+                <td>{isTopup ? <span className="badge badge-topup">↑ kas_masuk</span> : <span className={`badge badge-${h.action}`}>{h.action}</span>}</td>
+                <td style={{ maxWidth: 200, fontSize: 12 }}>{isTopup ? (h.note || '—') : (h.notes || '—')}</td>
+                <td><button className="btn btn-danger btn-sm" onClick={() => deleteHistory(row)}>Hapus</button></td>
+              </tr>
+            )
+          })}
           {pageRows.length === 0 && (
             <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>Tidak ada data.</td></tr>
           )}
@@ -693,7 +787,7 @@ function AdminHistory() {
       </table>
       </div>
 
-      <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={rows.length} />
+      <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={mergedRows.length} />
     </div>
   )
 }
