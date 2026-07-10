@@ -94,8 +94,6 @@ export function buildSlipBody(r, items, history, qrDataUrl) {
     ...(verifierRow   ? [signBox('Verifikasi Pencairan', 'Finance', verifierName, verifierSig, 'Dicairkan', fmtDate(verifierRow.created_at))] : []),
   ].join('')
 
-  const printDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-
   return `
 <div class="header">
   <div>
@@ -115,8 +113,7 @@ export function buildSlipBody(r, items, history, qrDataUrl) {
   <div class="info-row">
     <div class="info-col"><div class="lbl">Nama Karyawan</div><div class="val">${employeeName}</div></div>
     <div class="info-col"><div class="lbl">Department</div><div class="val">${r.profiles?.department || '—'}</div></div>
-    <div class="info-col"><div class="lbl">Tanggal Pengajuan</div><div class="val">${r.request_date}</div></div>
-    <div class="info-col"><div class="lbl">Tanggal Cetak</div><div class="val">${printDate}</div></div>
+    <div class="info-col"><div class="lbl">Tanggal Pencairan</div><div class="val">${fmtDate(verifierRow?.created_at) || '—'}</div></div>
   </div>
 </div>
 
@@ -300,11 +297,6 @@ export async function printSlipByRequestNo(supabase, requestNo, savePdf = false)
 // mana slip uang masuk dan mana slip uang keluar hanya dari sekilas pandang.
 function buildTopupSlipBody(t, creatorName, creatorSigUrl) {
   const rp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
-  const printDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-  const inputDate = t.created_at
-    ? new Date(t.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-    : '—'
-
   return `
 <div class="header">
   <div>
@@ -324,8 +316,6 @@ function buildTopupSlipBody(t, creatorName, creatorSigUrl) {
   <div class="info-row">
     <div class="info-col"><div class="lbl">Tanggal Pengisian</div><div class="val">${t.topup_date}</div></div>
     <div class="info-col"><div class="lbl">Diinput Oleh</div><div class="val">${creatorName || '—'}</div></div>
-    <div class="info-col"><div class="lbl">Diinput Pada</div><div class="val">${inputDate}</div></div>
-    <div class="info-col"><div class="lbl">Tanggal Cetak</div><div class="val">${printDate}</div></div>
   </div>
 </div>
 
