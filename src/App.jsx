@@ -4,6 +4,8 @@ import { supabase } from './supabaseClient'
 import AdminPanel from './AdminPanel.jsx'
 import Pagination from './Pagination.jsx'
 import { trackUrl, printSlip as printSlipShared, printBulkSlips as printBulkSlipsShared, printCashTopupSlip } from './slip.js'
+import { MonthlyBarChart, CategoryDonutChart } from './Charts.jsx'
+import NotificationBell from './Notifications.jsx'
 
 const CATEGORIES = ['Transport', 'Meal', 'Office Supplies', 'Communication', 'Accommodation', 'Other']
 
@@ -2339,7 +2341,7 @@ function Dashboard({ refreshKey, profile }) {
       setLoadingData(true)
       let query = supabase
         .from('reimbursements')
-        .select('*, profiles(full_name, department, signature_url), reimbursement_items(category)')
+        .select('*, profiles(full_name, department, signature_url), reimbursement_items(category, amount)')
         .order('created_at', { ascending: false })
 
       // Bukan finance/admin: hanya tampilkan department sendiri
@@ -2412,6 +2414,48 @@ function Dashboard({ refreshKey, profile }) {
   const pendingDisbursement = filtered.filter((r) => r.status === 'finance_approved').length
   const verifiedCount = filtered.filter((r) => r.status === 'verified').length
   const rejectedCount = filtered.filter((r) => r.status === 'rejected').length
+
+  // ---- Data untuk grafik: dihitung dari `filtered` (ikut menghormati filter
+  // status/department/kategori/periode/pencarian yang sedang aktif di atas),
+  // hanya dari pengajuan yang SUDAH terverifikasi (dana benar-benar sudah
+  // cair) — supaya grafik mencerminkan pengeluaran aktual, bukan estimasi.
+  const verifiedFiltered = useMemo(() => filtered.filter((r) => r.status === 'verified'), [filtered])
+
+  // Tren 6 bulan terakhir (termasuk bulan tanpa transaksi, ditampilkan 0)
+  const monthlyData = useMemo(() => {
+    const months = []
+    const now = new Date()
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      months.push({
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+        label: d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' }),
+        value: 0,
+      })
+    }
+    const map = {}
+    months.forEach((m) => { map[m.key] = m })
+    verifiedFiltered.forEach((r) => {
+      if (!r.request_date) return
+      const key = r.request_date.slice(0, 7)
+      if (map[key]) map[key].value += Number(r.total_amount) || 0
+    })
+    return months.map((m) => ({ label: m.label, value: m.value }))
+  }, [verifiedFiltered])
+
+  // Distribusi total pengeluaran per kategori item (diurutkan dari terbesar)
+  const categoryData = useMemo(() => {
+    const map = {}
+    verifiedFiltered.forEach((r) => {
+      ;(r.reimbursement_items || []).forEach((it) => {
+        const cat = it.category || 'Lainnya'
+        map[cat] = (map[cat] || 0) + (Number(it.amount) || 0)
+      })
+    })
+    return Object.entries(map)
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value)
+  }, [verifiedFiltered])
 
   // Print Slip HANYA boleh untuk pengajuan yang sudah verified, dan user satu
   // departemen dengan pengaju (atau finance/admin yang bisa lintas departemen).
@@ -2661,6 +2705,21 @@ function Dashboard({ refreshKey, profile }) {
           <div className="kpi-box"><div className="label">Rejected</div><div className="value">{rejectedCount}</div></div>
         </>}
       </div>
+
+      {/* ---- GRAFIK: tren bulanan & distribusi kategori (hanya data terverifikasi, ikut filter aktif) ---- */}
+      {!loadingData && (
+        <div className="chart-grid">
+          <div className="card chart-card">
+            <h3>📈 Tren Pengeluaran Terverifikasi (6 Bulan Terakhir)</h3>
+            <MonthlyBarChart data={monthlyData} />
+          </div>
+          <div className="card chart-card">
+            <h3>◆ Distribusi per Kategori</h3>
+            <CategoryDonutChart data={categoryData} />
+          </div>
+        </div>
+      )}
+
       <div className="card">
         <h3>
           Pengajuan {isFinanceOrAdmin ? '' : `— Dept. ${profile.department} `}
@@ -2815,6 +2874,30 @@ export default function App() {
   }, [session])
 
   useEffect(() => { loadProfile() }, [loadProfile])
+
+  // ---- REALTIME: auto-refresh saat ada perubahan data dari user lain ----
+  // Tanpa ini, approver B baru approve pengajuan tidak akan otomatis
+  // terlihat oleh approver C yang sedang membuka halaman Approval/Dashboard
+  // yang sama — mereka harus refresh manual. Dengan subscribe ke perubahan
+  // tabel-tabel inti (reimbursements, approval_history, cash_topups), setiap
+  // INSERT/UPDATE/DELETE dari siapa pun akan memicu `bump()`, yang otomatis
+  // mem-refresh semua komponen yang bergantung pada `refreshKey` (Dashboard,
+  // ApprovalQueue, FinanceVerification, CashBalance, CashFlowReport, dst).
+  //
+  // CATATAN: fitur Realtime harus AKTIF di Supabase untuk tabel-tabel ini
+  // (Dashboard Supabase -> Database -> Replication). Kalau belum aktif,
+  // subscribe ini tidak error, hanya tidak menerima event apa pun (fallback-
+  // nya tetap load manual seperti biasa saat pindah tab/refresh halaman).
+  useEffect(() => {
+    if (!session) return
+    const channel = supabase
+      .channel('pcrs-realtime-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reimbursements' }, () => bump())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'approval_history' }, () => bump())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cash_topups' }, () => bump())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [session, bump])
 
   if (!session) return <AuthScreen />
   if (!profile) return (
@@ -2992,9 +3075,12 @@ export default function App() {
         <div className="mobile-header">
           <button className="hamburger" onClick={() => setSidebarOpen(true)}>{Ico.menu}</button>
           <div className="mobile-title">{PAGE_TITLE[tab]}</div>
-          <button className="mobile-logout" onClick={() => supabase.auth.signOut()} title="Logout">
-            {Ico.logout}
-          </button>
+          <div className="mobile-header-actions">
+            <NotificationBell profile={profile} refreshKey={refreshKey} onNavigate={navigate} />
+            <button className="mobile-logout" onClick={() => supabase.auth.signOut()} title="Logout">
+              {Ico.logout}
+            </button>
+          </div>
         </div>
 
         {/* Page header (desktop) */}
@@ -3003,6 +3089,7 @@ export default function App() {
             <h1 className="page-title">{PAGE_TITLE[tab]}</h1>
             <div className="page-breadcrumb">PCRS / {PAGE_TITLE[tab]}</div>
           </div>
+          <NotificationBell profile={profile} refreshKey={refreshKey} onNavigate={navigate} />
         </div>
 
         <div className="content-area">
