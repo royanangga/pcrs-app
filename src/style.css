@@ -19,6 +19,25 @@
   --heading: var(--navy);
   --row-hover: #f0f4fa;
   --card-alt: #fafbfc;
+
+  /* Token untuk tombol-tombol "soft"/pastel yang dipakai lewat inline
+     style di berbagai komponen (Edit, Reset PW, Revisi, Batal, dll) —
+     disatukan di sini supaya semuanya otomatis ikut menyesuaikan warna
+     saat dark mode diaktifkan, bukan cuma yang lewat className. */
+  --btn-navy: var(--navy);
+  --btn-neutral-bg: var(--card-alt);
+  --btn-neutral-text: var(--text);
+  --btn-info-bg: #e8f0fe;
+  --btn-info-text: #1a56db;
+  --btn-warn-soft-bg: #fff3cd;
+  --btn-warn-soft-text: #664d03;
+  --btn-orange-soft-bg: #ffe6cc;
+  --btn-orange-soft-text: #b35900;
+  --msg-error-bg: #fbe2df;
+  --msg-success-bg: #d9f4e3;
+  --btn-orange-soft-border: #f0c080;
+  --row-selected-bg: #edf3ff;
+  --row-selected-hover-bg: #dce8ff;
 }
 
 /* ================================================================
@@ -50,6 +69,25 @@ html.dark {
   --danger: #ff7a72;
   --warning: #ffc35c;
   --success: #4ade80;
+
+  /* Padanan gelap untuk tombol-tombol soft/pastel inline (lihat catatan
+     token-nya di :root) — pastel solid diganti tint transparan + teks
+     terang, dan tombol navy solid dinaikkan sedikit supaya tetap kelihatan
+     "timbul" di atas kartu yang sama-sama gelap. */
+  --btn-navy: #26426b;
+  --btn-neutral-bg: var(--card-alt);
+  --btn-neutral-text: var(--text);
+  --btn-info-bg: rgba(94, 169, 255, 0.16);
+  --btn-info-text: #7fb3ff;
+  --btn-warn-soft-bg: rgba(255, 195, 92, 0.18);
+  --btn-warn-soft-text: #ffc35c;
+  --btn-orange-soft-bg: rgba(255, 159, 67, 0.18);
+  --btn-orange-soft-text: #ff9f43;
+  --msg-error-bg: rgba(255, 122, 114, 0.14);
+  --msg-success-bg: rgba(74, 222, 128, 0.14);
+  --btn-orange-soft-border: rgba(255, 159, 67, 0.4);
+  --row-selected-bg: rgba(45, 212, 194, 0.12);
+  --row-selected-hover-bg: rgba(45, 212, 194, 0.2);
 }
 html.dark img { opacity: 0.92; }
 
@@ -608,7 +646,7 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: #f6f7f9;
+  background: var(--card-alt);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -617,7 +655,7 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
 .confirm-title { margin: 0 0 6px; font-size: 16px; color: var(--heading); }
 .confirm-desc { font-size: 13px; color: var(--text-muted); margin: 0 0 16px; }
 .confirm-detail {
-  background: #f6f7f9;
+  background: var(--card-alt);
   border-radius: 8px;
   padding: 12px;
   text-align: left;
@@ -665,7 +703,7 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
   align-items: center;
   justify-content: center;
   font-size: 24px;
-  background: #f1f3f5;
+  background: var(--card-alt);
   border-radius: 6px;
   border: 1px solid var(--border);
 }
@@ -683,7 +721,7 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
 .admin-tabs {
   display: flex;
   gap: 2px;
-  background: #f1f3f5;
+  background: var(--card-alt);
   border: 1px solid var(--border);
   border-top: none;
   border-bottom: none;
@@ -697,7 +735,7 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
   cursor: pointer;
   border-bottom: 3px solid transparent;
 }
-.admin-tab.active { color: #b35900; border-bottom-color: #b35900; }
+.admin-tab.active { color: var(--btn-orange-soft-text); border-bottom-color: var(--btn-orange-soft-text); }
 
 .admin-section-title {
   font-size: 14px;
@@ -707,17 +745,17 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
   border-bottom: 1px solid var(--border);
 }
 .admin-msg {
-  background: #fff3cd;
-  border: 1px solid #ffc107;
+  background: var(--btn-warn-soft-bg);
+  border: 1px solid var(--warning);
   border-radius: 6px;
   padding: 8px 12px;
   font-size: 12px;
-  color: #664d03;
+  color: var(--btn-warn-soft-text);
   margin-bottom: 12px;
 }
 .admin-role-badge {
-  background: #e8f0fe;
-  color: #1a56db;
+  background: var(--btn-info-bg);
+  color: var(--btn-info-text);
   font-size: 11px;
   font-weight: 700;
   padding: 2px 8px;
@@ -775,7 +813,7 @@ td input[type="checkbox"], th input[type="checkbox"] {
 }
 .pagination-nav { display: flex; align-items: center; gap: 4px; }
 .pagination-nav .btn {
-  background: #f1f3f5;
+  background: var(--card-alt);
   color: var(--text);
   min-width: 30px;
   padding: 5px 8px;
@@ -819,14 +857,14 @@ td input[type="checkbox"], th input[type="checkbox"] {
   margin-top: 16px;
   font-size: 12px;
   color: var(--text-muted);
-  background: #f6f7f9;
+  background: var(--card-alt);
   border-radius: 6px;
   padding: 8px 12px;
 }
 
 .admin-create-form {
   background: var(--teal-light);
-  border: 1px solid #cfe7e7;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
@@ -1620,10 +1658,10 @@ tbody tr:hover .badge {
 
 /* ---- Selected row highlight ---- */
 .row-selected {
-  background: #edf3ff !important;
+  background: var(--row-selected-bg) !important;
 }
 .row-selected:hover {
-  background: #dce8ff !important;
+  background: var(--row-selected-hover-bg) !important;
 }
 
 @media (max-width: 768px) {
@@ -1668,8 +1706,8 @@ tbody tr:hover .badge {
 
 /* ---- Revision Panel ---- */
 .revision-panel {
-  background: #fffbf5;
-  border: 1.5px solid #f0c080;
+  background: var(--btn-orange-soft-bg);
+  border: 1.5px solid var(--btn-orange-soft-border);
   border-radius: 8px;
   padding: 16px;
   margin: 4px 0;
@@ -1678,10 +1716,10 @@ tbody tr:hover .badge {
 .revision-header {
   font-size: 14px;
   font-weight: 700;
-  color: #b35900;
+  color: var(--btn-orange-soft-text);
   margin-bottom: 14px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #f0c080;
+  border-bottom: 1px solid var(--btn-orange-soft-border);
 }
 .revision-header span {
   font-size: 12px;
@@ -1721,7 +1759,7 @@ tbody tr:hover .badge {
   color: var(--text);
   transition: box-shadow 0.18s, border-color 0.18s;
 }
-.search-bar-input::placeholder { color: #999; }
+.search-bar-input::placeholder { color: var(--text-muted); }
 .search-bar-input:focus {
   outline: none;
   border-color: #6fd6c8;
@@ -1745,7 +1783,7 @@ tbody tr:hover .badge {
 
 /* ---- Submit Confirm Modal ---- */
 .submit-confirm-info {
-  background: #f6f7f9;
+  background: var(--card-alt);
   border-radius: 8px;
   padding: 12px 14px;
   margin-bottom: 4px;
