@@ -246,6 +246,9 @@ body {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  max-width: 1440px;
+  margin: 0 auto;
+  width: 100%;
 }
 .page-title {
   font-size: 22px;
@@ -260,7 +263,7 @@ body {
   letter-spacing: 0.3px;
 }
 
-.content-area { padding: 18px 28px 32px; min-width: 0; width: 100%; }
+.content-area { padding: 18px 28px 32px; min-width: 0; width: 100%; max-width: 1440px; margin: 0 auto; }
 
 /* Legacy container still used by some components */
 .container { padding: 0; }
