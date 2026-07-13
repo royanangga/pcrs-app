@@ -1308,6 +1308,16 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
       setDateError('Tanggal pencairan dana wajib diisi.')
       return
     }
+    // Validasi eksplisit di sini WAJIB ada, jangan cuma andalkan atribut
+    // max="today" pada <input type="date">: di picker native mobile
+    // (iOS/Android) atribut max itu tidak dipatuhi secara visual — user
+    // tetap bisa scroll/pilih tanggal di masa depan lewat wheel picker,
+    // beda dengan kalender grid di desktop yang otomatis men-disable
+    // tanggal setelah hari ini.
+    if (action === 'verified' && disbursedDate > new Date().toISOString().slice(0, 10)) {
+      setDateError('Tanggal pencairan tidak boleh lebih dari hari ini.')
+      return
+    }
     setDateError('')
     setProcessing(true)
     const newStatus = action === 'verified' ? 'verified' : 'revision'
@@ -1454,7 +1464,13 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
                   type="date"
                   value={disbursedDate}
                   max={new Date().toISOString().slice(0, 10)}
-                  onChange={(e) => { setDisbursedDate(e.target.value); setDateError('') }}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setDisbursedDate(v)
+                    setDateError(v > new Date().toISOString().slice(0, 10)
+                      ? 'Tanggal pencairan tidak boleh lebih dari hari ini.'
+                      : '')
+                  }}
                   required
                 />
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
@@ -1477,7 +1493,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
                 className="btn"
                 style={{ background: VERIFY_ACTION_META[confirm.action].color, color: '#fff', flex: 1 }}
                 onClick={confirmAct}
-                disabled={processing || (confirm.action === 'verified' && !disbursedDate)}
+                disabled={processing || (confirm.action === 'verified' && (!disbursedDate || !!dateError))}
               >
                 {processing ? <><span className="spinner" />Memproses...</> : `Ya, ${VERIFY_ACTION_META[confirm.action].label}`}
               </button>
