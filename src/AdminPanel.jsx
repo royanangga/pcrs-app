@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from './supabaseClient'
 import Pagination from './Pagination'
 import Icon from './icons.jsx'
+import Portal from './Portal.jsx'
 
 const ROLES = ['employee', 'supervisor', 'manager', 'admin']
 
@@ -60,6 +61,7 @@ function useConfirm() {
   }
 
   const confirmModal = state && (
+    <Portal>
     <div className="modal-overlay" onClick={() => settle(false)}>
       <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
         <div className="confirm-icon" style={{ color: state.danger ? '#c0392b' : '#0f6e6e' }}>
@@ -81,6 +83,7 @@ function useConfirm() {
         </div>
       </div>
     </div>
+    </Portal>
   )
 
   return [askConfirm, confirmModal]
@@ -382,6 +385,7 @@ function AdminUsers() {
       <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={users.length} />
 
       {pwModal && (
+        <Portal>
         <div className="modal-overlay" onClick={() => setPwModal(null)}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="modal-close" onClick={() => setPwModal(null)}><Icon name="x" size={16} /></div>
@@ -399,6 +403,7 @@ function AdminUsers() {
             </form>
           </div>
         </div>
+        </Portal>
       )}
 
       {confirmModal}

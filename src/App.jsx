@@ -7,6 +7,7 @@ import { trackUrl, printSlip as printSlipShared, printBulkSlips as printBulkSlip
 import { MonthlyBarChart, CategoryDonutChart } from './Charts.jsx'
 import NotificationBell from './Notifications.jsx'
 import Icon, { Ico } from './icons.jsx'
+import Portal from './Portal.jsx'
 
 const CATEGORIES = ['Transport', 'Meal', 'Office Supplies', 'Communication', 'Accommodation', 'Other']
 
@@ -380,6 +381,7 @@ function SubmitForm({ profile, onSubmitted }) {
 
     {/* Modal Konfirmasi Submit */}
     {showConfirm && (
+      <Portal>
       <div className="modal-overlay" onClick={() => setShowConfirm(false)}>
         <div className="modal-box" style={{ width: 480, maxWidth: '96vw' }} onClick={(e) => e.stopPropagation()}>
           <div className="modal-close" onClick={() => setShowConfirm(false)}><Icon name="x" size={16} /></div>
@@ -462,6 +464,7 @@ function SubmitForm({ profile, onSubmitted }) {
           </div>
         </div>
       </div>
+    </Portal>
     )}
     </>
   )
@@ -1135,6 +1138,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
       </div>
 
       {confirm && (
+        <Portal>
         <div className="modal-overlay" onClick={() => !processing && setConfirm(null)}>
           <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
             <div className="confirm-icon" style={{ color: ACTION_META[confirm.action].color }}>
@@ -1173,10 +1177,12 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
             </div>
           </div>
         </div>
+      </Portal>
       )}
 
       {/* ---- Bulk Confirm Modal ---- */}
       {bulkConfirm && (
+        <Portal>
         <div className="modal-overlay" onClick={() => !processing && setBulkConfirm(null)}>
           <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
             <div className="confirm-icon" style={{ color: ACTION_META[bulkConfirm.action].color }}>
@@ -1225,6 +1231,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
             </div>
           </div>
         </div>
+      </Portal>
       )}
     </>
   )
@@ -1422,6 +1429,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
 
       {/* ---- Pop-up konfirmasi verifikasi / kembalikan ---- */}
       {confirm && (
+        <Portal>
         <div className="modal-overlay" onClick={() => !processing && setConfirm(null)}>
           <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
             <div className="confirm-icon" style={{ color: VERIFY_ACTION_META[confirm.action].color }}>
@@ -1476,6 +1484,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
             </div>
           </div>
         </div>
+      </Portal>
       )}
     </div>
   )
@@ -1705,6 +1714,7 @@ function CashBalance({ profile, refreshKey, onActed }) {
 
       {/* ---- Pop-up konfirmasi isi ulang saldo kas ---- */}
       {showConfirm && (
+        <Portal>
         <div className="modal-overlay" onClick={() => !saving && setShowConfirm(false)}>
           <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
             <div className="confirm-icon" style={{ color: '#1f8a4c' }}><Icon name="wallet" size={30} /></div>
@@ -1727,6 +1737,7 @@ function CashBalance({ profile, refreshKey, onActed }) {
             </div>
           </div>
         </div>
+      </Portal>
       )}
     </>
   )
