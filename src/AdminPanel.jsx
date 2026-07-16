@@ -64,18 +64,18 @@ function useConfirm() {
     <Portal>
     <div className="modal-overlay" onClick={() => settle(false)}>
       <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="confirm-icon" style={{ color: state.danger ? '#c0392b' : '#0f6e6e' }}>
+        <div className="confirm-icon" style={{ color: state.danger ? 'var(--danger)' : 'var(--teal)' }}>
           {state.danger ? <Icon name="alertTriangle" size={30} /> : '?'}
         </div>
         <h3 className="confirm-title">{state.title}</h3>
         <p className="confirm-desc" style={{ whiteSpace: 'pre-line' }}>{state.message}</p>
         <div className="confirm-actions">
-          <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => settle(false)}>
+          <button className="btn" style={{ background: 'var(--btn-neutral-bg)', color: 'var(--btn-neutral-text)', flex: 1 }} onClick={() => settle(false)}>
             Batal
           </button>
           <button
             className="btn"
-            style={{ background: state.danger ? '#c0392b' : '#0f6e6e', color: '#fff', flex: 1 }}
+            style={{ background: state.danger ? 'var(--danger)' : 'var(--teal)', color: '#fff', flex: 1 }}
             onClick={() => settle(true)}
           >
             {state.confirmLabel}
