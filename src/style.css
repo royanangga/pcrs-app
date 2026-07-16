@@ -1,24 +1,26 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 :root {
-  --navy: #14213d;
-  --teal: #0f6e6e;
-  --teal-light: #e6f3f3;
-  --bg: #f0f2f5;
+  --navy: #0f172a;
+  --teal: #0d9488;
+  --teal-light: #f0fdfa;
+  --bg: #f8fafc;
   --card: #ffffff;
-  --border: #e3e6ea;
-  --text: #1c2230;
-  --text-muted: #6b7280;
-  --danger: #c0392b;
-  --warning: #b8860b;
-  --success: #1f8a4c;
-  --radius: 10px;
+  --border: #e2e8f0;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --success: #10b981;
+  --radius: 12px;
   --sidebar-w: 240px;
   /* Warna judul/label yang biasanya dulu langsung pakai var(--navy).
      Dipisah jadi variabel sendiri supaya di dark mode bisa jadi terang,
      sementara var(--navy) tetap gelap untuk dipakai sebagai background
      (sidebar, login screen, dll — yang memang harus tetap gelap di kedua tema). */
   --heading: var(--navy);
-  --row-hover: #f0f4fa;
-  --card-alt: #fafbfc;
+  --row-hover: #f1f5f9;
+  --card-alt: #f8fafc;
 
   /* Token untuk tombol-tombol "soft"/pastel yang dipakai lewat inline
      style di berbagai komponen (Edit, Reset PW, Revisi, Batal, dll) —
@@ -27,17 +29,17 @@
   --btn-navy: var(--navy);
   --btn-neutral-bg: var(--card-alt);
   --btn-neutral-text: var(--text);
-  --btn-info-bg: #e8f0fe;
-  --btn-info-text: #1a56db;
-  --btn-warn-soft-bg: #fff3cd;
-  --btn-warn-soft-text: #664d03;
-  --btn-orange-soft-bg: #ffe6cc;
-  --btn-orange-soft-text: #b35900;
-  --msg-error-bg: #fbe2df;
-  --msg-success-bg: #d9f4e3;
-  --btn-orange-soft-border: #f0c080;
-  --row-selected-bg: #edf3ff;
-  --row-selected-hover-bg: #dce8ff;
+  --btn-info-bg: #eff6ff;
+  --btn-info-text: #2563eb;
+  --btn-warn-soft-bg: #fef3c7;
+  --btn-warn-soft-text: #d97706;
+  --btn-orange-soft-bg: #fff7ed;
+  --btn-orange-soft-text: #ea580c;
+  --msg-error-bg: #fee2e2;
+  --msg-success-bg: #d1fae5;
+  --btn-orange-soft-border: #fdbb2d;
+  --row-selected-bg: #eff6ff;
+  --row-selected-hover-bg: #dbeafe;
 }
 
 /* ================================================================
@@ -53,39 +55,39 @@
    (yang kalau dipakai apa adanya di dark mode jadi silau/norak).
    ================================================================ */
 html.dark {
-  --bg: #0a1420;
-  --card: #101d2c;
-  --card-alt: #16293a;
-  --border: #223449;
-  --text: #dce6e4;
-  --text-muted: #7f97a0;
-  --heading: #f1f7f5;
-  --row-hover: #16283a;
+  --bg: #030712;
+  --card: #0f172a;
+  --card-alt: #1e293b;
+  --border: #1e293b;
+  --text: #f1f5f9;
+  --text-muted: #94a3b8;
+  --heading: #f8fafc;
+  --row-hover: #1e293b;
 
   /* Aksen dinaikkan kecerahannya dari versi light supaya tetap punya
      kontras & "gigi" di atas latar gelap, tanpa terasa neon. */
-  --teal: #2dd4c2;
-  --teal-light: rgba(45, 212, 194, 0.14);
-  --danger: #ff7a72;
-  --warning: #ffc35c;
-  --success: #4ade80;
+  --teal: #2dd4bf;
+  --teal-light: rgba(45, 212, 194, 0.12);
+  --danger: #f87171;
+  --warning: #fbbf24;
+  --success: #34d399;
 
   /* Padanan gelap untuk tombol-tombol soft/pastel inline (lihat catatan
      token-nya di :root) — pastel solid diganti tint transparan + teks
      terang, dan tombol navy solid dinaikkan sedikit supaya tetap kelihatan
      "timbul" di atas kartu yang sama-sama gelap. */
-  --btn-navy: #26426b;
+  --btn-navy: #1e293b;
   --btn-neutral-bg: var(--card-alt);
   --btn-neutral-text: var(--text);
-  --btn-info-bg: rgba(94, 169, 255, 0.16);
-  --btn-info-text: #7fb3ff;
-  --btn-warn-soft-bg: rgba(255, 195, 92, 0.18);
-  --btn-warn-soft-text: #ffc35c;
-  --btn-orange-soft-bg: rgba(255, 159, 67, 0.18);
-  --btn-orange-soft-text: #ff9f43;
-  --msg-error-bg: rgba(255, 122, 114, 0.14);
-  --msg-success-bg: rgba(74, 222, 128, 0.14);
-  --btn-orange-soft-border: rgba(255, 159, 67, 0.4);
+  --btn-info-bg: rgba(37, 99, 235, 0.16);
+  --btn-info-text: #60a5fa;
+  --btn-warn-soft-bg: rgba(217, 119, 6, 0.18);
+  --btn-warn-soft-text: #fbbf24;
+  --btn-orange-soft-bg: rgba(234, 88, 12, 0.18);
+  --btn-orange-soft-text: #f97316;
+  --msg-error-bg: rgba(248, 113, 113, 0.14);
+  --msg-success-bg: rgba(52, 211, 153, 0.14);
+  --btn-orange-soft-border: rgba(234, 88, 12, 0.4);
   --row-selected-bg: rgba(45, 212, 194, 0.12);
   --row-selected-hover-bg: rgba(45, 212, 194, 0.2);
 }
@@ -97,19 +99,19 @@ html.dark img { opacity: 0.92; }
 html.dark .sidebar,
 html.dark .login-wrap,
 html.dark .bottom-nav {
-  background: linear-gradient(180deg, #14213d 0%, #0a1420 100%);
+  background: linear-gradient(180deg, #0f172a 0%, #030712 100%);
 }
 
 /* Badge status: light mode pakai pastel solid, dark mode pakai tint
    transparan + teks lebih terang supaya kontrasnya pas di atas kartu gelap. */
-html.dark .badge-draft            { background: rgba(255,255,255,0.08); color: #aab6c4; }
-html.dark .badge-submitted        { background: rgba(255,195,92,0.16); color: var(--warning); }
-html.dark .badge-approved         { background: rgba(74,222,128,0.16); color: var(--success); }
-html.dark .badge-finance_approved { background: rgba(94,169,255,0.16); color: #7fb3ff; }
-html.dark .badge-rejected         { background: rgba(255,122,114,0.16); color: var(--danger); }
-html.dark .badge-revision         { background: rgba(255,159,67,0.18); color: #ff9f43; }
-html.dark .badge-verified         { background: rgba(94,169,255,0.16); color: #6dc2ff; }
-html.dark .badge-topup            { background: rgba(74,222,128,0.16); color: var(--success); }
+html.dark .badge-draft            { background: rgba(255,255,255,0.08); color: #94a3b8; }
+html.dark .badge-submitted        { background: rgba(251,191,36,0.16); color: var(--warning); }
+html.dark .badge-approved         { background: rgba(52,211,153,0.16); color: var(--success); }
+html.dark .badge-finance_approved { background: rgba(37,99,235,0.16); color: #60a5fa; }
+html.dark .badge-rejected         { background: rgba(248,113,113,0.16); color: var(--danger); }
+html.dark .badge-revision         { background: rgba(234,88,12,0.18); color: #f97316; }
+html.dark .badge-verified         { background: rgba(37,99,235,0.16); color: #60a5fa; }
+html.dark .badge-topup            { background: rgba(52,211,153,0.16); color: var(--success); }
 
 /* Ring fokus input & glow tombol ikut warna teal versi dark supaya tetap
    terlihat jelas (versi light-nya terlalu redup di atas latar gelap). */
@@ -118,7 +120,7 @@ html.dark input:focus, html.dark select:focus, html.dark textarea:focus {
 }
 html.dark .kpi-box:hover { border-color: rgba(45, 212, 194, 0.4); }
 html.dark .skeleton-row {
-  background: linear-gradient(90deg, #16293a 25%, #1e3348 50%, #16293a 75%);
+  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
   background-size: 700px 100%;
 }
 
@@ -127,12 +129,19 @@ html.dark .skeleton-row {
 
 html, body {
   margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6, .mobile-title, .sidebar-logo, .login-logo, .page-title {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  letter-spacing: -0.02em;
 }
 
 /* ================================================================
@@ -437,26 +446,48 @@ body {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px;
-  margin-bottom: 16px;
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
 }
 
-.card h3 { margin-top: 0; font-size: 15px; color: var(--heading); }
+.card h3 {
+  margin-top: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--heading);
+  letter-spacing: -0.015em;
+}
 
 .grid-kpi {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 14px;
-  margin-bottom: 20px;
+  gap: 16px;
+  margin-bottom: 24px;
 }
 .kpi-box {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 20px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+  position: relative;
+  overflow: hidden;
 }
-.kpi-box .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
-.kpi-box .value { font-size: 24px; font-weight: 700; color: var(--heading); margin-top: 4px; }
+.kpi-box .label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.kpi-box .value {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--heading);
+  margin-top: 6px;
+  letter-spacing: -0.02em;
+}
 
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); }
@@ -1014,17 +1045,17 @@ input, select, textarea {
 /* ========== KARTU ========== */
 .card {
   animation: fadeSlideUp 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  transition: box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
 }
 .card:hover {
-  box-shadow: 0 6px 24px rgba(0,0,0,0.09);
+  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.04), 0 8px 10px -6px rgba(0,0,0,0.04);
   transform: translateY(-1px);
 }
 
 /* ========== KPI BOX ========== */
 .kpi-box {
   animation: fadeSlideUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
   cursor: default;
 }
 .kpi-box:nth-child(1) { animation-delay: 0.04s; }
@@ -1033,11 +1064,12 @@ input, select, textarea {
 .kpi-box:nth-child(4) { animation-delay: 0.16s; }
 .kpi-box:nth-child(5) { animation-delay: 0.20s; }
 .kpi-box:hover {
-  transform: translateY(-4px) scale(1.02);
-  box-shadow: 0 10px 28px rgba(15,110,110,0.13);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 20px -8px rgba(13,148,136,0.08);
+  border-color: var(--teal);
 }
 .kpi-box .value {
-  transition: color 0.2s;
+  transition: color 0.25s ease;
 }
 .kpi-box:hover .value { color: var(--teal); }
 
