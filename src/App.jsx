@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import QRCode from 'qrcode'
-import { supabase } from './supabaseClient'
+import { supabase, isMock } from './supabaseClient'
 import AdminPanel from './AdminPanel.jsx'
 import Pagination from './Pagination.jsx'
 import { trackUrl, printSlip as printSlipShared, printBulkSlips as printBulkSlipsShared, printCashTopupSlip } from './slip.js'
@@ -197,8 +197,48 @@ export function AuthScreen() {
   }
 
   return (
-    <div className="login-wrap">
-      <form className="login-card" onSubmit={handleSubmit}>
+    <div className="login-wrap" style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '20px', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      {isMock && (
+        <div style={{
+          maxWidth: '440px',
+          background: 'var(--teal-light)',
+          border: '1.5px solid rgba(79, 70, 229, 0.15)',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          fontSize: '13px',
+          lineHeight: '1.5',
+          color: 'var(--text)',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', color: 'var(--teal)', marginBottom: '10px' }}>
+            <span>💡 Mode Demo Lokal (Offline)</span>
+          </div>
+          <p style={{ margin: '0 0 10px 0', opacity: 0.9 }}>
+            Gunakan salah satu akun demo berikut dengan password <strong>password</strong>:
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 12px', background: 'var(--card)', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '12.5px', fontFamily: 'monospace' }}>
+            <span style={{ fontWeight: '600', color: '#e84393' }}>admin@perusahaan.com</span>
+            <span style={{ color: 'var(--text-muted)' }}>(Super Admin)</span>
+            
+            <span style={{ fontWeight: '600', color: '#fd9644' }}>manager@perusahaan.com</span>
+            <span style={{ color: 'var(--text-muted)' }}>(Finance Manager)</span>
+            
+            <span style={{ fontWeight: '600', color: '#2bcbba' }}>finance@perusahaan.com</span>
+            <span style={{ color: 'var(--text-muted)' }}>(Finance Staff)</span>
+            
+            <span style={{ fontWeight: '600', color: '#fed330' }}>supervisor@perusahaan.com</span>
+            <span style={{ color: 'var(--text-muted)' }}>(Supervisor IT)</span>
+            
+            <span style={{ fontWeight: '600', color: '#45aaf2' }}>employee@perusahaan.com</span>
+            <span style={{ color: 'var(--text-muted)' }}>(Employee IT)</span>
+          </div>
+          <p style={{ margin: '10px 0 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
+            Untuk menghubungkan database Supabase asli, setel variabel lingkungan <strong>VITE_SUPABASE_URL</strong> dan <strong>VITE_SUPABASE_ANON_KEY</strong>.
+          </p>
+        </div>
+      )}
+
+      <form className="login-card" onSubmit={handleSubmit} style={{ margin: 0 }}>
         <div className="login-logo">PCRS</div>
         <h2 style={{ margin: '8px 0 4px' }}>Selamat Datang</h2>
         <div className="sub">Petty Cash Reimbursement System</div>
