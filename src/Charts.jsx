@@ -4,7 +4,7 @@ import React from 'react'
 // tambah dependency baru di package.json. Dipakai di Dashboard untuk
 // menampilkan tren pengeluaran bulanan & distribusi per kategori.
 
-const PALETTE = ['#0d9488', '#f59e0b', '#f43f5e', '#3b82f6', '#8b5cf6', '#10b981', '#64748b', '#a855f7']
+const PALETTE = ['#4f46e5', '#f59e0b', '#f43f5e', '#3b82f6', '#8b5cf6', '#10b981', '#64748b', '#a855f7']
 
 function rupiahShort(n) {
   const v = Number(n) || 0
