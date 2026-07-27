@@ -129,6 +129,25 @@ function approvalFlowLabel(submitterRole, total) {
   return 'Supervisor → Approval Finance Manager → Finance Verification'
 }
 
+// Guard anti race-condition: update HANYA berhasil kalau status baris masih
+// sama seperti saat dimuat di layar. Kalau sudah keburu diproses orang lain
+// (mis. dua approver klik bersamaan, atau Finance Verification & Approval
+// dibuka di 2 tab), `data` akan kosong -- munculkan pesan jelas, jangan
+// diam-diam menimpa/mendobel data. Dipakai di ApprovalQueue & FinanceVerification.
+async function updateWithGuard(id, expectedStatus, patch) {
+  const { data, error } = await supabase
+    .from('reimbursements')
+    .update(patch)
+    .eq('id', id)
+    .eq('status', expectedStatus)
+    .select('id')
+  if (error) return { error }
+  if (!data || data.length === 0) {
+    return { error: { message: 'Pengajuan ini sudah diproses oleh orang lain. Silakan refresh halaman.' } }
+  }
+  return { error: null }
+}
+
 function rupiah(n) {
   return 'Rp ' + Number(n || 0).toLocaleString('id-ID')
 }
@@ -892,7 +911,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
     if (row._stage === 'fm') {
       // ---- Tahap Approval Finance Manager (status 'approved' -> 'finance_approved') ----
       if (action === 'approved') {
-        const { error } = await supabase.from('reimbursements').update({ status: 'finance_approved' }).eq('id', row.id)
+        const { error } = await updateWithGuard(row.id, row.status, { status: 'finance_approved' })
         if (error) return { error }
         const { error: histErr } = await supabase.from('approval_history').insert({
           reimbursement_id: row.id,
@@ -903,7 +922,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
         return { error: histErr }
       } else {
         const newStatus = action === 'rejected' ? 'rejected' : 'revision'
-        const { error } = await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
+        const { error } = await updateWithGuard(row.id, row.status, { status: newStatus })
         if (error) return { error }
         const { error: histErr } = await supabase.from('approval_history').insert({
           reimbursement_id: row.id,
@@ -925,9 +944,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
       if (next) {
         // Masih ada tahap approval berikutnya (masih status 'submitted')
         const NEXT_LABEL = { manager: 'Manager' }
-        const { error } = await supabase.from('reimbursements')
-          .update({ required_role: next })
-          .eq('id', row.id)
+        const { error } = await updateWithGuard(row.id, row.status, { required_role: next })
         if (error) return { error }
         const { error: histErr } = await supabase.from('approval_history').insert({
           reimbursement_id: row.id,
@@ -938,9 +955,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
         return { error: histErr }
       } else {
         // Approval departemen selesai → lanjut ke Approval Finance Manager (sebelum pencairan)
-        const { error } = await supabase.from('reimbursements')
-          .update({ status: 'approved' })
-          .eq('id', row.id)
+        const { error } = await updateWithGuard(row.id, row.status, { status: 'approved' })
         if (error) return { error }
         const { error: histErr } = await supabase.from('approval_history').insert({
           reimbursement_id: row.id,
@@ -953,7 +968,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
     } else {
       const newStatus = action === 'rejected' ? 'rejected' : 'revision'
       const rejectedByLabel = REJECTED_BY_LABEL[row.required_role] || profile.role
-      const { error } = await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
+      const { error } = await updateWithGuard(row.id, row.status, { status: newStatus })
       if (error) return { error }
       const { error: histErr } = await supabase.from('approval_history').insert({
         reimbursement_id: row.id,
@@ -1321,7 +1336,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
     setDateError('')
     setProcessing(true)
     const newStatus = action === 'verified' ? 'verified' : 'revision'
-    const { error: updErr } = await supabase.from('reimbursements').update({ status: newStatus }).eq('id', row.id)
+    const { error: updErr } = await updateWithGuard(row.id, row.status, { status: newStatus })
     if (updErr) {
       setProcessing(false)
       alert('Gagal memproses verifikasi: ' + updErr.message)
