@@ -2909,6 +2909,13 @@ export default function App() {
   const loadProfile = useCallback(async () => {
     if (!session) { setProfile(null); return }
     const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
+    // Jaga-jaga: kalau akun sudah ditandai resign tapi masih sempat punya sesi aktif
+    // (mis. ban belum diproses / sesi lama sebelum dinonaktifkan), paksa sign-out.
+    if (data?.status === 'resigned') {
+      await supabase.auth.signOut()
+      setProfile(null)
+      return
+    }
     setProfile(data)
   }, [session])
 

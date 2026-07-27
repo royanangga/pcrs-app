@@ -119,6 +119,9 @@ function AdminUsers() {
   const [selected, setSelected] = useState(new Set())
   const [bulkRole, setBulkRole] = useState(ROLES[0])
 
+  // filter status aktif/resign
+  const [filterStatus, setFilterStatus] = useState('all')
+
   // pagination state
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -135,13 +138,18 @@ function AdminUsers() {
 
   useEffect(() => { load() }, [load])
 
-  const totalPages = Math.max(1, Math.ceil(users.length / pageSize))
+  const visibleUsers = useMemo(() => {
+    if (filterStatus === 'all') return users
+    return users.filter((u) => (u.status || 'active') === filterStatus)
+  }, [users, filterStatus])
+
+  const totalPages = Math.max(1, Math.ceil(visibleUsers.length / pageSize))
   useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
 
   const pageRows = useMemo(() => {
     const start = (page - 1) * pageSize
-    return users.slice(start, start + pageSize)
-  }, [users, page, pageSize])
+    return visibleUsers.slice(start, start + pageSize)
+  }, [visibleUsers, page, pageSize])
 
   const allOnPageSelected = pageRows.length > 0 && pageRows.every((u) => selected.has(u.id))
 
@@ -224,15 +232,52 @@ function AdminUsers() {
     setLoading(false)
   }
 
-  async function deleteUser(id, name) {
-    const ok = await askConfirm(`Hapus user "${name}"?\nUser tidak akan bisa login lagi dan semua datanya akan dihapus permanen.`, { title: 'Hapus User' })
+  // Cek apakah ada pengajuan yang sedang menunggu approval role & department user ini
+  // -- dipakai sebagai peringatan sebelum menonaktifkan (bukan pemblokir keras)
+  async function countStuckApprovals(u) {
+    if (!['supervisor', 'manager', 'finance_manager'].includes(u.role)) return 0
+    const { data } = await supabase
+      .from('reimbursements')
+      .select('id, status, required_role, profiles(department)')
+      .eq('required_role', u.role)
+      .in('status', ['submitted', 'approved'])
+    return (data || []).filter((r) => r.profiles?.department === u.department).length
+  }
+
+  async function deactivateUser(u) {
+    setLoading(true)
+    const stuckCount = await countStuckApprovals(u)
+    setLoading(false)
+
+    const warning = stuckCount > 0
+      ? `\n\n⚠️ Ada ${stuckCount} pengajuan yang sedang menunggu approval role "${u.role}" di department "${u.department}". Kalau "${u.full_name}" satu-satunya pemegang role itu di department tsb, pengajuan ini akan macet -- cek & alihkan manual lewat tab Transaksi setelah nonaktifkan.`
+      : ''
+
+    const ok = await askConfirm(
+      `Nonaktifkan user "${u.full_name}"?\nUser tidak akan bisa login lagi, tapi semua riwayat transaksinya tetap tersimpan (tidak dihapus).${warning}`,
+      { title: 'Nonaktifkan User (Resign)' }
+    )
     if (!ok) return
     setLoading(true)
-    const result = await callAdminOps(session, { action: 'delete_user', user_id: id })
+    const result = await callAdminOps(session, { action: 'deactivate_user', user_id: u.id })
     if (result.error) {
-      setMsg({ text: 'Gagal hapus: ' + result.error, type: 'error' })
+      setMsg({ text: 'Gagal menonaktifkan: ' + result.error, type: 'error' })
     } else {
-      setMsg({ text: `User "${name}" berhasil dihapus sepenuhnya.`, type: 'ok' })
+      setMsg({ text: `User "${u.full_name}" berhasil dinonaktifkan.`, type: 'ok' })
+      load()
+    }
+    setLoading(false)
+  }
+
+  async function reactivateUser(u) {
+    const ok = await askConfirm(`Aktifkan kembali user "${u.full_name}"?`, { title: 'Aktifkan User', danger: false, confirmLabel: 'Ya, Aktifkan' })
+    if (!ok) return
+    setLoading(true)
+    const result = await callAdminOps(session, { action: 'reactivate_user', user_id: u.id })
+    if (result.error) {
+      setMsg({ text: 'Gagal mengaktifkan: ' + result.error, type: 'error' })
+    } else {
+      setMsg({ text: `User "${u.full_name}" berhasil diaktifkan kembali.`, type: 'ok' })
       load()
     }
     setLoading(false)
@@ -253,21 +298,21 @@ function AdminUsers() {
     load()
   }
 
-  async function bulkDeleteUsers() {
+  async function bulkDeactivateUsers() {
     if (!session || selected.size === 0) return
-    const ok = await askConfirm(`Hapus ${selected.size} user terpilih?\nSemua user akan dihapus permanen dan tidak bisa login lagi.`, { title: 'Hapus User Massal' })
+    const ok = await askConfirm(`Nonaktifkan ${selected.size} user terpilih?\nUser tidak akan bisa login lagi, tapi riwayat transaksinya tetap tersimpan.`, { title: 'Nonaktifkan User Massal' })
     if (!ok) return
     setLoading(true)
     const ids = Array.from(selected)
     let failCount = 0
     for (const id of ids) {
-      const result = await callAdminOps(session, { action: 'delete_user', user_id: id })
+      const result = await callAdminOps(session, { action: 'deactivate_user', user_id: id })
       if (result.error) failCount++
     }
     setMsg({
       text: failCount
-        ? `${ids.length - failCount} user berhasil dihapus, ${failCount} gagal.`
-        : `${ids.length} user berhasil dihapus sepenuhnya.`,
+        ? `${ids.length - failCount} user berhasil dinonaktifkan, ${failCount} gagal.`
+        : `${ids.length} user berhasil dinonaktifkan.`,
       type: failCount ? 'error' : 'ok',
     })
     clearSelection()
@@ -323,12 +368,21 @@ function AdminUsers() {
         </form>
       )}
 
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+        <label style={{ fontSize: 13, color: 'var(--text-muted)' }}>Status:</label>
+        <select value={filterStatus} onChange={(e) => { setFilterStatus(e.target.value); setPage(1) }}>
+          <option value="all">Semua</option>
+          <option value="active">Aktif</option>
+          <option value="resigned">Resign</option>
+        </select>
+      </div>
+
       <BulkBar count={selected.size} onClear={clearSelection}>
         <select value={bulkRole} onChange={(e) => setBulkRole(e.target.value)}>
           {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
         <button className="btn btn-primary btn-sm" onClick={bulkChangeRole} disabled={loading}>Ubah Role</button>
-        <button className="btn btn-danger btn-sm" onClick={bulkDeleteUsers} disabled={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon name="trash" size={12} /> Hapus Terpilih</button>
+        <button className="btn btn-danger btn-sm" onClick={bulkDeactivateUsers} disabled={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon name="trash" size={12} /> Nonaktifkan Terpilih</button>
       </BulkBar>
 
       <div className="table-scroll">
@@ -338,7 +392,7 @@ function AdminUsers() {
             <th style={{ width: 32 }}>
               <input type="checkbox" checked={allOnPageSelected} onChange={toggleAllOnPage} />
             </th>
-            <th>Nama</th><th>Email</th><th>Department</th><th>Role</th><th>Aksi</th>
+            <th>Nama</th><th>Email</th><th>Department</th><th>Role</th><th>Status</th><th>Aksi</th>
           </tr>
         </thead>
         <tbody>
@@ -355,6 +409,7 @@ function AdminUsers() {
                       {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
                   </td>
+                  <td>{(u.status || 'active') === 'resigned' ? 'Resign' : 'Aktif'}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="btn btn-success btn-sm" onClick={() => saveEdit(u)} disabled={loading}>Simpan</button>{' '}
                     <button className="btn btn-sm" style={{ background: '#eee' }} onClick={() => setEditing(null)}>Batal</button>
@@ -366,23 +421,39 @@ function AdminUsers() {
                   <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{u.email}</td>
                   <td>{u.department}</td>
                   <td><span className="admin-role-badge">{u.role}</span></td>
+                  <td>
+                    <span
+                      className="admin-role-badge"
+                      style={
+                        (u.status || 'active') === 'resigned'
+                          ? { background: '#fbe2df', color: '#c0392b' }
+                          : { background: '#d9f4e3', color: '#1f8a4c' }
+                      }
+                    >
+                      {(u.status || 'active') === 'resigned' ? 'Resign' : 'Aktif'}
+                    </span>
+                  </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="btn btn-sm" style={{ background: '#e8f0fe', color: '#1a56db' }} onClick={() => startEdit(u)}>Edit</button>{' '}
                     <button className="btn btn-sm" style={{ background: '#fff3cd', color: '#664d03' }} onClick={() => { setPwModal({ id: u.id, email: u.email }); setNewPw('') }}>Reset PW</button>{' '}
-                    <button className="btn btn-danger btn-sm" onClick={() => deleteUser(u.id, u.full_name)}>Hapus</button>
+                    {(u.status || 'active') === 'resigned' ? (
+                      <button className="btn btn-sm" style={{ background: '#d9f4e3', color: '#1f8a4c' }} onClick={() => reactivateUser(u)}>Aktifkan</button>
+                    ) : (
+                      <button className="btn btn-danger btn-sm" onClick={() => deactivateUser(u)}>Nonaktifkan</button>
+                    )}
                   </td>
                 </>
               )}
             </tr>
           ))}
           {pageRows.length === 0 && (
-            <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>Tidak ada data.</td></tr>
+            <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>Tidak ada data.</td></tr>
           )}
         </tbody>
       </table>
       </div>
 
-      <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={users.length} />
+      <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={visibleUsers.length} />
 
       {pwModal && (
         <Portal>
