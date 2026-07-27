@@ -232,25 +232,30 @@ function AdminUsers() {
     setLoading(false)
   }
 
-  // Cek apakah ada pengajuan yang sedang menunggu approval role & department user ini
-  // -- dipakai sebagai peringatan sebelum menonaktifkan (bukan pemblokir keras)
-  async function countStuckApprovals(u) {
-    if (!['supervisor', 'manager', 'finance_manager'].includes(u.role)) return 0
+  // pengajuan yang butuh reassign setelah nonaktifkan user
+  const [reassignModal, setReassignModal] = useState(null) // { resignedUser, rows, picks }
+  const [savingReassign, setSavingReassign] = useState(false)
+
+  // Ambil daftar pengajuan yang sedang menunggu approval role & department user ini
+  // -- dipakai sebagai peringatan sebelum menonaktifkan, dan sumber data untuk
+  // modal reassign/delegasi kalau memang ada yang macet.
+  async function getStuckApprovals(u) {
+    if (!['supervisor', 'manager', 'finance_manager'].includes(u.role)) return []
     const { data } = await supabase
       .from('reimbursements')
-      .select('id, status, required_role, profiles(department)')
+      .select('id, request_no, status, required_role, total_amount, profiles(department, full_name)')
       .eq('required_role', u.role)
       .in('status', ['submitted', 'approved'])
-    return (data || []).filter((r) => r.profiles?.department === u.department).length
+    return (data || []).filter((r) => r.profiles?.department === u.department)
   }
 
   async function deactivateUser(u) {
     setLoading(true)
-    const stuckCount = await countStuckApprovals(u)
+    const stuck = await getStuckApprovals(u)
     setLoading(false)
 
-    const warning = stuckCount > 0
-      ? `\n\n⚠️ Ada ${stuckCount} pengajuan yang sedang menunggu approval role "${u.role}" di department "${u.department}". Kalau "${u.full_name}" satu-satunya pemegang role itu di department tsb, pengajuan ini akan macet -- cek & alihkan manual lewat tab Transaksi setelah nonaktifkan.`
+    const warning = stuck.length > 0
+      ? `\n\n⚠️ Ada ${stuck.length} pengajuan yang sedang menunggu approval role "${u.role}" di department "${u.department}". Kalau "${u.full_name}" satu-satunya pemegang role itu di department tsb, Anda akan diminta memilih pengganti (delegasi) setelah ini.`
       : ''
 
     const ok = await askConfirm(
@@ -265,8 +270,40 @@ function AdminUsers() {
     } else {
       setMsg({ text: `User "${u.full_name}" berhasil dinonaktifkan.`, type: 'ok' })
       load()
+      if (stuck.length > 0) {
+        setReassignModal({ resignedUser: u, rows: stuck, picks: {} })
+      }
     }
     setLoading(false)
+  }
+
+  // Kandidat delegate: user aktif, bukan si resign, dan punya role yang relevan
+  // (approver departemen atau siapa saja di department Finance).
+  function delegateCandidates(resignedUser) {
+    return users.filter((cand) =>
+      (cand.status || 'active') === 'active' &&
+      cand.id !== resignedUser.id &&
+      (cand.role === 'supervisor' || cand.role === 'manager' || (cand.department || '').trim().toLowerCase() === 'finance')
+    )
+  }
+
+  async function saveReassign() {
+    if (!reassignModal) return
+    setSavingReassign(true)
+    const entries = Object.entries(reassignModal.picks).filter(([, v]) => v)
+    let failCount = 0
+    for (const [reimbId, delegateId] of entries) {
+      const { error } = await supabase.from('reimbursements').update({ delegated_approver_id: delegateId }).eq('id', reimbId)
+      if (error) failCount++
+    }
+    setSavingReassign(false)
+    setMsg({
+      text: failCount
+        ? `${entries.length - failCount} pengajuan berhasil didelegasikan, ${failCount} gagal.`
+        : `${entries.length} pengajuan berhasil didelegasikan ke approver baru.`,
+      type: failCount ? 'error' : 'ok',
+    })
+    setReassignModal(null)
   }
 
   async function reactivateUser(u) {
@@ -472,6 +509,47 @@ function AdminUsers() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+        </Portal>
+      )}
+
+      {reassignModal && (
+        <Portal>
+        <div className="modal-overlay" onClick={() => setReassignModal(null)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <div className="modal-close" onClick={() => setReassignModal(null)}><Icon name="x" size={16} /></div>
+            <h3 style={{ marginTop: 0 }}>Reassign Pengajuan yang Macet</h3>
+            <div className="checklist-line" style={{ marginBottom: 12 }}>
+              "{reassignModal.resignedUser.full_name}" sudah dinonaktifkan. Pengajuan di bawah ini sedang menunggu
+              approval role "{reassignModal.resignedUser.role}" di department "{reassignModal.resignedUser.department}" —
+              pilih pengganti untuk masing-masing (opsional, boleh dilewati kalau mau ditangani manual nanti).
+            </div>
+            <div style={{ maxHeight: 320, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {reassignModal.rows.map((r) => (
+                <div key={r.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{r.request_no}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>
+                    {r.profiles?.full_name || '—'} · {rupiah(r.total_amount)}
+                  </div>
+                  <select
+                    value={reassignModal.picks[r.id] || ''}
+                    onChange={(e) => setReassignModal({ ...reassignModal, picks: { ...reassignModal.picks, [r.id]: e.target.value } })}
+                  >
+                    <option value="">-- Lewati (jangan reassign) --</option>
+                    {delegateCandidates(reassignModal.resignedUser).map((cand) => (
+                      <option key={cand.id} value={cand.id}>{cand.full_name} ({cand.role} · {cand.department})</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+              <button type="button" className="btn btn-sm" style={{ background: '#eee', flex: 1 }} onClick={() => setReassignModal(null)}>Tutup</button>
+              <button type="button" className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={saveReassign} disabled={savingReassign}>
+                {savingReassign ? 'Menyimpan...' : 'Simpan Delegasi'}
+              </button>
+            </div>
           </div>
         </div>
         </Portal>

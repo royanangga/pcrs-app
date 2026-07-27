@@ -870,9 +870,23 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
         fmRows = fmData || []
       }
 
+      // ---- Tahap Delegasi: pengajuan yang secara khusus didelegasikan ke user
+      // ini oleh admin (dipakai saat approver asli sudah resign/dinonaktifkan
+      // dan tidak ada lagi yang cocok secara role+department) ----
+      const { data: delegatedData } = await supabase
+        .from('reimbursements')
+        .select('*, profiles(id, full_name, department, role)')
+        .eq('delegated_approver_id', profile.id)
+        .in('status', ['submitted', 'approved'])
+        .order('created_at', { ascending: true })
+
+      const existingIds = new Set([...deptRows, ...fmRows].map((r) => r.id))
+      const delegatedRows = (delegatedData || []).filter((r) => !existingIds.has(r.id))
+
       const merged = [
         ...deptRows.map((r) => ({ ...r, _stage: 'dept' })),
         ...fmRows.map((r) => ({ ...r, _stage: 'fm' })),
+        ...delegatedRows.map((r) => ({ ...r, _stage: r.status === 'approved' ? 'fm' : 'dept', _delegated: true })),
       ].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
 
       setRows(merged)
@@ -1111,7 +1125,14 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
                     />
                   </td>
                   <td>{r.request_no}</td>
-                  <td>{empProfiles[r.employee_id]?.full_name || '—'}</td>
+                  <td>
+                    {empProfiles[r.employee_id]?.full_name || '—'}
+                    {r._delegated && (
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 999, background: '#fff3cd', color: '#664d03', whiteSpace: 'nowrap' }}>
+                        Didelegasikan ke Anda
+                      </span>
+                    )}
+                  </td>
                   <td><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{empProfiles[r.employee_id]?.department || '—'}</span></td>
                   {isFm && (
                     <td>
