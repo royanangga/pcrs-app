@@ -842,7 +842,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
       // ---- Tahap 1: approval departemen (status 'submitted') ----
       let query = supabase
         .from('reimbursements')
-        .select('*, profiles(id, full_name, department, role)')
+        .select('*, profiles!employee_id(id, full_name, department, role)')
         .eq('status', 'submitted')
 
       // Admin melihat semua tahap; role lain hanya melihat pengajuan yang memang
@@ -864,7 +864,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
       if (isFm) {
         const { data: fmData } = await supabase
           .from('reimbursements')
-          .select('*, profiles(id, full_name, department, role)')
+          .select('*, profiles!employee_id(id, full_name, department, role)')
           .eq('status', 'approved')
           .order('created_at', { ascending: true })
         fmRows = fmData || []
@@ -875,7 +875,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
       // dan tidak ada lagi yang cocok secara role+department) ----
       const { data: delegatedData } = await supabase
         .from('reimbursements')
-        .select('*, profiles(id, full_name, department, role)')
+        .select('*, profiles!employee_id(id, full_name, department, role)')
         .eq('delegated_approver_id', profile.id)
         .in('status', ['submitted', 'approved'])
         .order('created_at', { ascending: true })
@@ -2408,7 +2408,7 @@ function Dashboard({ refreshKey, profile }) {
       setLoadingData(true)
       let query = supabase
         .from('reimbursements')
-        .select('*, profiles(full_name, department, signature_url), reimbursement_items(category, amount)')
+        .select('*, profiles!employee_id(full_name, department, signature_url), reimbursement_items(category, amount)')
         .order('created_at', { ascending: false })
 
       // Bukan finance/admin: hanya tampilkan department sendiri

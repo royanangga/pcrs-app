@@ -178,7 +178,21 @@ function AdminUsers() {
     setMsg({ text: '', type: '' })
   }
 
+  // Cegah admin aktif terakhir kehilangan status admin-nya (ganti role/nonaktifkan)
+  // -- pengecekan cepat di UI; jaring pengaman sebenarnya ada di trigger DB.
+  function isLastActiveAdmin(u) {
+    if (u.role !== 'admin' || (u.status || 'active') !== 'active') return false
+    const otherActiveAdmins = users.filter(
+      (x) => x.id !== u.id && x.role === 'admin' && (x.status || 'active') === 'active'
+    ).length
+    return otherActiveAdmins === 0
+  }
+
   async function saveEdit(u) {
+    if (u.role === 'admin' && editForm.role !== 'admin' && isLastActiveAdmin(u)) {
+      setMsg({ text: `"${u.full_name}" adalah admin aktif terakhir -- tidak bisa mengubah role-nya. Aktifkan/buat admin lain dulu.`, type: 'error' })
+      return
+    }
     setLoading(true)
     // Update profil
     const { error: pErr } = await supabase.from('profiles').update({
@@ -243,13 +257,17 @@ function AdminUsers() {
     if (!['supervisor', 'manager', 'finance_manager'].includes(u.role)) return []
     const { data } = await supabase
       .from('reimbursements')
-      .select('id, request_no, status, required_role, total_amount, profiles(department, full_name)')
+      .select('id, request_no, status, required_role, total_amount, profiles!employee_id(department, full_name)')
       .eq('required_role', u.role)
       .in('status', ['submitted', 'approved'])
     return (data || []).filter((r) => r.profiles?.department === u.department)
   }
 
   async function deactivateUser(u) {
+    if (isLastActiveAdmin(u)) {
+      setMsg({ text: `"${u.full_name}" adalah admin aktif terakhir -- tidak bisa dinonaktifkan. Aktifkan/buat admin lain dulu.`, type: 'error' })
+      return
+    }
     setLoading(true)
     const stuck = await getStuckApprovals(u)
     setLoading(false)
