@@ -632,6 +632,12 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
     setEditId(r.id)
     setMsg('')
     setOpenId(null)
+    // Muat juga attachment yang sudah ada, biar kelihatan di panel edit
+    // (bukan cuma nambah file baru tanpa sadar file lama masih ada)
+    if (!attMap[r.id]) {
+      const list = await fetchAttachments(r.id)
+      setAttMap((m) => ({ ...m, [r.id]: list }))
+    }
   }
 
   function updateEditItem(i, field, value) {
@@ -659,13 +665,28 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
     onRefresh && onRefresh()
   }
 
-  // Eksekutor tunggal untuk modal konfirmasi submit/hapus draft
+  // Eksekutor tunggal untuk modal konfirmasi submit/hapus draft/hapus attachment
   async function runConfirmModal() {
     if (!confirmModal) return
     const { type, row } = confirmModal
     setConfirmModal(null)
     if (type === 'delete') await deleteDraft(row)
+    else if (type === 'delete-attachment') await deleteAttachment(row.attachment, row.reimbId)
     else await submitRevision(row)
+  }
+
+  async function deleteAttachment(a, reimbId) {
+    setSaving(true)
+    // Hapus baris DB dulu (dijaga RLS: cuma boleh selama masih draft/revision)
+    const { error } = await supabase.from('attachments').delete().eq('id', a.id)
+    if (!error) {
+      // Hapus file fisiknya juga dari storage (best-effort, tidak fatal kalau gagal)
+      await supabase.storage.from('receipts').remove([a.file_path])
+    }
+    setSaving(false)
+    if (error) { setMsg('Gagal menghapus lampiran: ' + error.message); return }
+    setMsg('')
+    setAttMap((m) => ({ ...m, [reimbId]: (m[reimbId] || []).filter((x) => x.id !== a.id) }))
   }
 
   async function saveDraftEdit(r) {
@@ -699,6 +720,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
     setSaving(false)
     setEditId(null)
     setMsg('')
+    setAttMap((m) => { const n = { ...m }; delete n[r.id]; return n })
     load()
     onRefresh && onRefresh()
   }
@@ -753,6 +775,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
     setSaving(false)
     setEditId(null)
     setMsg('')
+    setAttMap((m) => { const n = { ...m }; delete n[r.id]; return n })
     load()
     onRefresh && onRefresh()
   }
@@ -887,7 +910,29 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                           Total: {rupiah(editTotal)} &nbsp;•&nbsp; Alur: {approvalFlowLabel(profile.role, editTotal)}
                         </div>
 
-                        <label style={{ marginTop: 14 }}>Upload Bukti Transaksi Baru (opsional, file lama tetap tersimpan)</label>
+                        <label style={{ marginTop: 14 }}>Bukti Transaksi yang Sudah Diunggah</label>
+                        {(attMap[r.id] || []).length === 0 ? (
+                          <div className="checklist-line" style={{ color: 'var(--text-muted)' }}>Belum ada file diunggah.</div>
+                        ) : (
+                          <ul className="attachment-list">
+                            {(attMap[r.id] || []).map((a) => (
+                              <li key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                <a href={attachmentUrl(a.file_path)} target="_blank" rel="noreferrer">{a.file_name}</a>
+                                <button
+                                  type="button"
+                                  className="btn btn-danger btn-sm"
+                                  style={{ padding: '2px 8px', fontSize: 11 }}
+                                  disabled={saving}
+                                  onClick={() => setConfirmModal({ type: 'delete-attachment', row: { attachment: a, reimbId: r.id } })}
+                                >
+                                  Hapus
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+
+                        <label style={{ marginTop: 14 }}>Upload Bukti Transaksi Baru (opsional, file di atas tetap tersimpan, ini cuma menambah)</label>
                         <input type="file" accept="image/*,.pdf" multiple onChange={(e) => setEditFiles(Array.from(e.target.files))} />
                         {editFiles.length > 0 && (
                           <div className="checklist-line">{editFiles.length} file dipilih: {editFiles.map((f) => f.name).join(', ')}</div>
@@ -956,26 +1001,34 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
         <Portal>
         <div className="modal-overlay" onClick={() => !saving && setConfirmModal(null)}>
           <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="confirm-icon" style={{ color: confirmModal.type === 'delete' ? 'var(--danger, #d9534f)' : 'var(--teal)' }}>
-              <Icon name={confirmModal.type === 'delete' ? 'trash' : 'check'} size={28} />
+            <div className="confirm-icon" style={{ color: confirmModal.type === 'delete' || confirmModal.type === 'delete-attachment' ? 'var(--danger, #d9534f)' : 'var(--teal)' }}>
+              <Icon name={confirmModal.type === 'delete' || confirmModal.type === 'delete-attachment' ? 'trash' : 'check'} size={28} />
             </div>
             <h3 className="confirm-title">
-              {confirmModal.type === 'delete' ? 'Hapus Draft?' : confirmModal.row.status === 'draft' ? 'Kirim Draft Sekarang?' : 'Submit Ulang Pengajuan?'}
+              {confirmModal.type === 'delete'
+                ? 'Hapus Draft?'
+                : confirmModal.type === 'delete-attachment'
+                  ? 'Hapus Lampiran?'
+                  : confirmModal.row.status === 'draft' ? 'Kirim Draft Sekarang?' : 'Submit Ulang Pengajuan?'}
             </h3>
             <p className="confirm-desc">
               {confirmModal.type === 'delete'
                 ? 'Draft ini akan dihapus permanen beserta item dan file yang sudah diunggah. Tidak bisa dibatalkan.'
-                : confirmModal.row.status === 'draft'
-                  ? `Alur approval: ${approvalFlowLabel(profile.role, editTotal)}. Setelah dikirim, tidak bisa ditarik kembali ke draft.`
-                  : 'Pengajuan akan dikirim ulang ke approval dari tahap awal.'}
+                : confirmModal.type === 'delete-attachment'
+                  ? `File "${confirmModal.row.attachment.file_name}" akan dihapus permanen. Tidak bisa dibatalkan.`
+                  : confirmModal.row.status === 'draft'
+                    ? `Alur approval: ${approvalFlowLabel(profile.role, editTotal)}. Setelah dikirim, tidak bisa ditarik kembali ke draft.`
+                    : 'Pengajuan akan dikirim ulang ke approval dari tahap awal.'}
             </p>
 
-            <div className="confirm-detail">
-              <div className="confirm-row"><span>No. Request</span><strong>{confirmModal.row.request_no}</strong></div>
-              {confirmModal.type !== 'delete' && (
-                <div className="confirm-row"><span>Total</span><strong>{rupiah(editTotal)}</strong></div>
-              )}
-            </div>
+            {confirmModal.type !== 'delete-attachment' && (
+              <div className="confirm-detail">
+                <div className="confirm-row"><span>No. Request</span><strong>{confirmModal.row.request_no}</strong></div>
+                {confirmModal.type !== 'delete' && (
+                  <div className="confirm-row"><span>Total</span><strong>{rupiah(editTotal)}</strong></div>
+                )}
+              </div>
+            )}
 
             <div className="confirm-actions">
               <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => setConfirmModal(null)} disabled={saving}>
@@ -983,11 +1036,11 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
               </button>
               <button
                 className="btn"
-                style={{ background: confirmModal.type === 'delete' ? 'var(--danger, #d9534f)' : 'var(--teal)', color: '#fff', flex: 1 }}
+                style={{ background: confirmModal.type === 'delete' || confirmModal.type === 'delete-attachment' ? 'var(--danger, #d9534f)' : 'var(--teal)', color: '#fff', flex: 1 }}
                 onClick={runConfirmModal}
                 disabled={saving}
               >
-                {saving ? <><span className="spinner" />Memproses...</> : confirmModal.type === 'delete' ? 'Ya, Hapus' : 'Ya, Kirim'}
+                {saving ? <><span className="spinner" />Memproses...</> : confirmModal.type === 'delete' || confirmModal.type === 'delete-attachment' ? 'Ya, Hapus' : 'Ya, Kirim'}
               </button>
             </div>
           </div>
