@@ -593,6 +593,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
   const [search, setSearch]       = useState('')
   const [page, setPage]           = useState(1)
   const [pageSize, setPageSize]   = useState(10)
+  const [confirmModal, setConfirmModal] = useState(null) // { type: 'submit' | 'delete', row }
 
   const load = useCallback(async () => {
     setLoadingData(true)
@@ -648,7 +649,6 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
   // Simpan perubahan pada draft TANPA mengubah statusnya (masih draft,
   // belum masuk antrian approval siapa pun).
   async function deleteDraft(r) {
-    if (!window.confirm(`Hapus draft "${r.request_no}"? Tidak bisa dibatalkan.`)) return
     setSaving(true)
     const { error } = await supabase.from('reimbursements').delete().eq('id', r.id)
     setSaving(false)
@@ -657,6 +657,15 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
     setMsg('')
     load()
     onRefresh && onRefresh()
+  }
+
+  // Eksekutor tunggal untuk modal konfirmasi submit/hapus draft
+  async function runConfirmModal() {
+    if (!confirmModal) return
+    const { type, row } = confirmModal
+    setConfirmModal(null)
+    if (type === 'delete') await deleteDraft(row)
+    else await submitRevision(row)
   }
 
   async function saveDraftEdit(r) {
@@ -885,7 +894,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                         )}
 
                         <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-                          <button className="btn btn-primary" onClick={() => submitRevision(r)} disabled={saving}>
+                          <button className="btn btn-primary" onClick={() => setConfirmModal({ type: 'submit', row: r })} disabled={saving}>
                             {saving ? <><span className="spinner" />Menyimpan...</> : <><Icon name="check" size={13} /> {r.status === 'draft' ? 'Kirim Sekarang' : 'Submit Ulang'}</>}
                           </button>
                           {r.status === 'draft' && (
@@ -894,7 +903,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                             </button>
                           )}
                           {r.status === 'draft' && (
-                            <button className="btn btn-danger btn-sm" onClick={() => deleteDraft(r)} disabled={saving}>
+                            <button className="btn btn-danger btn-sm" onClick={() => setConfirmModal({ type: 'delete', row: r })} disabled={saving}>
                               Hapus Draft
                             </button>
                           )}
@@ -940,6 +949,50 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
 
       {!loadingData && filtered.length > 0 && (
         <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={filtered.length} />
+      )}
+
+      {/* ---- Modal Konfirmasi Submit / Hapus Draft ---- */}
+      {confirmModal && (
+        <Portal>
+        <div className="modal-overlay" onClick={() => !saving && setConfirmModal(null)}>
+          <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-icon" style={{ color: confirmModal.type === 'delete' ? 'var(--danger, #d9534f)' : 'var(--teal)' }}>
+              <Icon name={confirmModal.type === 'delete' ? 'trash' : 'check'} size={28} />
+            </div>
+            <h3 className="confirm-title">
+              {confirmModal.type === 'delete' ? 'Hapus Draft?' : confirmModal.row.status === 'draft' ? 'Kirim Draft Sekarang?' : 'Submit Ulang Pengajuan?'}
+            </h3>
+            <p className="confirm-desc">
+              {confirmModal.type === 'delete'
+                ? 'Draft ini akan dihapus permanen beserta item dan file yang sudah diunggah. Tidak bisa dibatalkan.'
+                : confirmModal.row.status === 'draft'
+                  ? `Alur approval: ${approvalFlowLabel(profile.role, editTotal)}. Setelah dikirim, tidak bisa ditarik kembali ke draft.`
+                  : 'Pengajuan akan dikirim ulang ke approval dari tahap awal.'}
+            </p>
+
+            <div className="confirm-detail">
+              <div className="confirm-row"><span>No. Request</span><strong>{confirmModal.row.request_no}</strong></div>
+              {confirmModal.type !== 'delete' && (
+                <div className="confirm-row"><span>Total</span><strong>{rupiah(editTotal)}</strong></div>
+              )}
+            </div>
+
+            <div className="confirm-actions">
+              <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => setConfirmModal(null)} disabled={saving}>
+                Batal
+              </button>
+              <button
+                className="btn"
+                style={{ background: confirmModal.type === 'delete' ? 'var(--danger, #d9534f)' : 'var(--teal)', color: '#fff', flex: 1 }}
+                onClick={runConfirmModal}
+                disabled={saving}
+              >
+                {saving ? <><span className="spinner" />Memproses...</> : confirmModal.type === 'delete' ? 'Ya, Hapus' : 'Ya, Kirim'}
+              </button>
+            </div>
+          </div>
+        </div>
+        </Portal>
       )}
     </div>
   )
