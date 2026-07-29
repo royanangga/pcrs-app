@@ -271,6 +271,66 @@ function SubmitForm({ profile, onSubmitted }) {
     setShowConfirm(true)
   }
 
+  async function handleSaveDraft() {
+    if (items.some((it) => !it.expense_date || !it.amount)) {
+      setMsg('Lengkapi semua tanggal dan nominal item.')
+      return
+    }
+    setSaving(true)
+
+    const { data: header, error: hErr } = await supabase
+      .from('reimbursements')
+      .insert({
+        request_no: generateRequestNo(),
+        employee_id: profile.id,
+        total_amount: total,
+        status: 'draft',
+        required_role: requiredRoleFor(profile.role),
+      })
+      .select()
+      .single()
+
+    if (hErr) {
+      setMsg('Gagal menyimpan draft: ' + hErr.message)
+      setSaving(false)
+      return
+    }
+
+    const rows = items.map((it) => ({
+      reimbursement_id: header.id,
+      expense_date: it.expense_date,
+      category: it.category,
+      description: it.description,
+      amount: Number(it.amount),
+    }))
+    const { error: iErr } = await supabase.from('reimbursement_items').insert(rows)
+    if (iErr) {
+      setMsg('Gagal menyimpan item: ' + iErr.message)
+      setSaving(false)
+      return
+    }
+
+    if (files.length > 0) {
+      for (const file of files) {
+        const path = `${header.id}/${Date.now()}_${file.name}`
+        const { error: upErr } = await supabase.storage.from('receipts').upload(path, file)
+        if (!upErr) {
+          await supabase.from('attachments').insert({
+            reimbursement_id: header.id,
+            file_name: file.name,
+            file_path: path,
+          })
+        }
+      }
+    }
+
+    setSaving(false)
+    setItems([{ expense_date: '', category: CATEGORIES[0], description: '', amount: '' }])
+    setFiles([])
+    setMsg(`✓ Draft ${header.request_no} tersimpan. Belum dikirim ke siapa pun -- lanjutkan & submit kapan saja dari tab "Pengajuan Saya".`)
+    onSubmitted && onSubmitted()
+  }
+
   async function handleConfirmedSubmit() {
     setSaving(true)
     setShowConfirm(false)
@@ -392,9 +452,20 @@ function SubmitForm({ profile, onSubmitted }) {
 
         {msg && <div className="error-text" style={{ color: msg.startsWith('✓') ? 'var(--success)' : 'var(--danger)' }}>{msg}</div>}
 
-        <button className="btn btn-primary" style={{ marginTop: 14 }} disabled={saving}>
-          {saving ? <><span className="spinner" />Mengirim...</> : 'Submit Reimbursement'}
-        </button>
+        <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+          <button className="btn btn-primary" disabled={saving}>
+            {saving ? <><span className="spinner" />Mengirim...</> : 'Submit Reimbursement'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            style={{ background: '#f1f3f5', color: '#333' }}
+            disabled={saving}
+            onClick={handleSaveDraft}
+          >
+            {saving ? 'Menyimpan...' : 'Simpan sebagai Draft'}
+          </button>
+        </div>
       </form>
     </div>
 
@@ -574,6 +645,55 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
     setEditItems(editItems.filter((_, idx) => idx !== i))
   }
 
+  // Simpan perubahan pada draft TANPA mengubah statusnya (masih draft,
+  // belum masuk antrian approval siapa pun).
+  async function deleteDraft(r) {
+    if (!window.confirm(`Hapus draft "${r.request_no}"? Tidak bisa dibatalkan.`)) return
+    setSaving(true)
+    const { error } = await supabase.from('reimbursements').delete().eq('id', r.id)
+    setSaving(false)
+    if (error) { setMsg('Gagal menghapus: ' + error.message); return }
+    setEditId(null)
+    setMsg('')
+    load()
+    onRefresh && onRefresh()
+  }
+
+  async function saveDraftEdit(r) {
+    if (editItems.some((it) => !it.expense_date || !it.amount)) {
+      setMsg('Lengkapi semua tanggal dan nominal item.')
+      return
+    }
+    setSaving(true)
+
+    await supabase.from('reimbursement_items').delete().eq('reimbursement_id', r.id)
+    await supabase.from('reimbursement_items').insert(
+      editItems.map((it) => ({
+        reimbursement_id: r.id,
+        expense_date: it.expense_date,
+        category: it.category,
+        description: it.description,
+        amount: Number(it.amount),
+      }))
+    )
+
+    for (const file of editFiles) {
+      const path = `${r.id}/${Date.now()}_${file.name}`
+      const { error: upErr } = await supabase.storage.from('receipts').upload(path, file)
+      if (!upErr) {
+        await supabase.from('attachments').insert({
+          reimbursement_id: r.id, file_name: file.name, file_path: path,
+        })
+      }
+    }
+
+    setSaving(false)
+    setEditId(null)
+    setMsg('')
+    load()
+    onRefresh && onRefresh()
+  }
+
   async function submitRevision(r) {
     if (editItems.some((it) => !it.expense_date || !it.amount)) {
       setMsg('Lengkapi semua tanggal dan nominal item.')
@@ -618,7 +738,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
       reimbursement_id: r.id,
       approver_id: profile.id,
       action: 'submitted',
-      notes: 'Pengajuan direvisi dan disubmit ulang oleh employee',
+      notes: r.status === 'draft' ? 'Draft disubmit oleh employee' : 'Pengajuan direvisi dan disubmit ulang oleh employee',
     })
 
     setSaving(false)
@@ -691,13 +811,13 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                   <td>{rupiah(r.total_amount)}</td>
                   <td><span className={`badge badge-${r.status}`}>{statusLabelFor(r)}</span></td>
                   <td style={{ whiteSpace: 'nowrap' }}>
-                    {r.status === 'revision' ? (
+                    {(r.status === 'revision' || r.status === 'draft') ? (
                       <button
                         className="btn btn-sm"
-                        style={{ background: '#ffe6cc', color: '#b35900', fontWeight: 700 }}
+                        style={{ background: r.status === 'draft' ? '#e8f0fe' : '#ffe6cc', color: r.status === 'draft' ? '#1a56db' : '#b35900', fontWeight: 700 }}
                         onClick={() => editId === r.id ? setEditId(null) : openRevision(r)}
                       >
-                        {editId === r.id ? 'Tutup' : <><Icon name="edit" size={12} /> Edit & Submit Ulang</>}
+                        {editId === r.id ? 'Tutup' : r.status === 'draft' ? <><Icon name="edit" size={12} /> Lanjutkan Draft</> : <><Icon name="edit" size={12} /> Edit & Submit Ulang</>}
                       </button>
                     ) : (
                       <span className="detail-toggle" onClick={() => toggleOpen(r.id)}>
@@ -713,8 +833,13 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                     <td colSpan={5}>
                       <div className="revision-panel">
                         <div className="revision-header">
-                          <Icon name="edit" size={14} style={{ marginRight: 4 }} /> Revisi Pengajuan <span>{r.request_no}</span>
-                          <div className="revision-note">Nomor request tetap sama. Setelah submit ulang, alur approval: {approvalFlowLabel(profile.role, editTotal)}.</div>
+                          <Icon name="edit" size={14} style={{ marginRight: 4 }} />
+                          {r.status === 'draft' ? 'Lanjutkan Draft' : 'Revisi Pengajuan'} <span>{r.request_no}</span>
+                          <div className="revision-note">
+                            {r.status === 'draft'
+                              ? 'Belum dikirim ke siapa pun. Bisa disimpan lagi sebagai draft, atau langsung disubmit.'
+                              : `Nomor request tetap sama. Setelah submit ulang, alur approval: ${approvalFlowLabel(profile.role, editTotal)}.`}
+                          </div>
                         </div>
 
                         {editItems.map((it, i) => (
@@ -761,8 +886,18 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
 
                         <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
                           <button className="btn btn-primary" onClick={() => submitRevision(r)} disabled={saving}>
-                            {saving ? <><span className="spinner" />Menyimpan...</> : <><Icon name="check" size={13} /> Submit Ulang</>}
+                            {saving ? <><span className="spinner" />Menyimpan...</> : <><Icon name="check" size={13} /> {r.status === 'draft' ? 'Kirim Sekarang' : 'Submit Ulang'}</>}
                           </button>
+                          {r.status === 'draft' && (
+                            <button className="btn btn-sm" style={{ background: '#f1f3f5', color: '#333' }} onClick={() => saveDraftEdit(r)} disabled={saving}>
+                              Simpan sebagai Draft
+                            </button>
+                          )}
+                          {r.status === 'draft' && (
+                            <button className="btn btn-danger btn-sm" onClick={() => deleteDraft(r)} disabled={saving}>
+                              Hapus Draft
+                            </button>
+                          )}
                           <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} onClick={() => setEditId(null)}>
                             Batal
                           </button>
