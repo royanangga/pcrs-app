@@ -195,6 +195,31 @@ async function fetchAttachments(reimbursementId) {
   return data || []
 }
 
+// Pengganti alert() bawaan browser -- konsisten dengan gaya modal custom
+// yang dipakai di seluruh aplikasi. Dipakai lokal per-komponen:
+// const [alertMsg, setAlertMsg] = useState('')
+// setAlertMsg('teks pesan') menggantikan alert('teks pesan')
+// {alertMsg && <SimpleAlertModal text={alertMsg} onClose={() => setAlertMsg('')} />}
+function SimpleAlertModal({ text, onClose }) {
+  const isError = /gagal|error/i.test(text)
+  return (
+    <Portal>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="confirm-icon" style={{ color: isError ? 'var(--danger, #d9534f)' : 'var(--teal)' }}>
+          <Icon name={isError ? 'x' : 'check'} size={28} />
+        </div>
+        <h3 className="confirm-title">{isError ? 'Terjadi Masalah' : 'Berhasil'}</h3>
+        <p className="confirm-desc" style={{ whiteSpace: 'pre-line' }}>{text}</p>
+        <div className="confirm-actions">
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={onClose}>OK</button>
+        </div>
+      </div>
+    </div>
+    </Portal>
+  )
+}
+
 function attachmentUrl(filePath) {
   return supabase.storage.from('receipts').getPublicUrl(filePath).data.publicUrl
 }
@@ -1108,6 +1133,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
   const [processing, setProcessing] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const [alertMsg, setAlertMsg] = useState('')
 
   // Admin: lintas departemen (tidak dibatasi department pengaju).
   // Supervisor & Manager (termasuk yang di department Finance) hanya melihat
@@ -1191,7 +1217,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
     const { error } = await applyAction(row, action, noteDraft[row.id])
     setProcessing(false)
     if (error) {
-      alert('Gagal memproses aksi: ' + error.message)
+      setAlertMsg('Gagal memproses aksi: ' + error.message)
       return
     }
     setConfirm(null)
@@ -1310,7 +1336,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
     setBulkConfirm(null)
     setSelected([])
     setBulkNote('')
-    if (errors.length) alert('Sebagian aksi gagal diproses:\n' + errors.join('\n'))
+    if (errors.length) setAlertMsg('Sebagian aksi gagal diproses:\n' + errors.join('\n'))
     onActed && onActed()
   }
 
@@ -1549,6 +1575,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
         </div>
       </Portal>
       )}
+      {alertMsg && <SimpleAlertModal text={alertMsg} onClose={() => setAlertMsg('')} />}
     </>
   )
 }
@@ -1571,6 +1598,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
   const [loadError, setLoadError] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const [alertMsg, setAlertMsg] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -1640,7 +1668,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
     const { error: updErr } = await updateWithGuard(row.id, row.status, { status: newStatus })
     if (updErr) {
       setProcessing(false)
-      alert('Gagal memproses verifikasi: ' + updErr.message)
+      setAlertMsg('Gagal memproses verifikasi: ' + updErr.message)
       return
     }
     const { error: histErr } = await supabase.from('approval_history').insert({
@@ -1659,7 +1687,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
     if (histErr) {
       // Status reimbursement sudah berhasil diubah, tapi pencatatan riwayat gagal —
       // tetap beri tahu user supaya tidak mengira aksi gagal total.
-      alert('Verifikasi berhasil, namun gagal mencatat riwayat: ' + histErr.message)
+      setAlertMsg('Verifikasi berhasil, namun gagal mencatat riwayat: ' + histErr.message)
     }
     setConfirm(null)
     onActed && onActed()
@@ -1818,6 +1846,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
         </div>
       </Portal>
       )}
+      {alertMsg && <SimpleAlertModal text={alertMsg} onClose={() => setAlertMsg('')} />}
     </div>
   )
 }
@@ -2093,6 +2122,7 @@ function CashFlowReport({ profile, refreshKey }) {
   const [dateTo, setDateTo] = useState('')
   const [exportingExcel, setExportingExcel] = useState(false)
   const [exportingPdf, setExportingPdf] = useState(false)
+  const [alertMsg, setAlertMsg] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
@@ -2311,7 +2341,7 @@ function CashFlowReport({ profile, refreshKey }) {
       URL.revokeObjectURL(url)
     } catch (err) {
       console.error(err)
-      alert('Gagal membuat file Excel. Silakan coba lagi.')
+      setAlertMsg('Gagal membuat file Excel. Silakan coba lagi.')
     } finally {
       setExportingExcel(false)
     }
@@ -2477,6 +2507,7 @@ function CashFlowReport({ profile, refreshKey }) {
           <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={filteredLedger.length} />
         )}
       </div>
+      {alertMsg && <SimpleAlertModal text={alertMsg} onClose={() => setAlertMsg('')} />}
     </>
   )
 }
@@ -2678,6 +2709,7 @@ function Dashboard({ refreshKey, profile }) {
   const [selectedPrintIds, setSelectedPrintIds] = useState([])
   const [bulkPrinting, setBulkPrinting] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [alertMsg, setAlertMsg] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
@@ -2962,7 +2994,7 @@ function Dashboard({ refreshKey, profile }) {
       URL.revokeObjectURL(url)
     } catch (err) {
       console.error(err)
-      alert('Gagal membuat file Excel. Silakan coba lagi.')
+      setAlertMsg('Gagal membuat file Excel. Silakan coba lagi.')
     } finally {
       setExporting(false)
     }
@@ -3166,6 +3198,7 @@ function Dashboard({ refreshKey, profile }) {
           <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={filtered.length} />
         )}
       </div>
+      {alertMsg && <SimpleAlertModal text={alertMsg} onClose={() => setAlertMsg('')} />}
     </>
   )
 }
