@@ -220,6 +220,29 @@ function SimpleAlertModal({ text, onClose }) {
   )
 }
 
+const MAX_FILE_MB = 5
+const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf']
+
+// Validasi file yang dipilih user SEBELUM diupload -- supaya ada feedback
+// langsung ("tipe tidak didukung" / "ukuran kelebihan") alih-alih baru
+// ketahuan setelah proses upload jalan (atau malah gagal diam-diam).
+function validatePickedFiles(fileList) {
+  const valid = []
+  const rejected = []
+  for (const f of Array.from(fileList || [])) {
+    if (!ALLOWED_FILE_TYPES.includes(f.type)) {
+      rejected.push(`${f.name}: tipe file tidak didukung (cuma gambar JPG/PNG/GIF/WEBP atau PDF)`)
+      continue
+    }
+    if (f.size > MAX_FILE_MB * 1024 * 1024) {
+      rejected.push(`${f.name}: ukuran ${(f.size / 1024 / 1024).toFixed(1)}MB melebihi batas ${MAX_FILE_MB}MB`)
+      continue
+    }
+    valid.push(f)
+  }
+  return { valid, rejected }
+}
+
 function attachmentUrl(filePath) {
   return supabase.storage.from('receipts').getPublicUrl(filePath).data.publicUrl
 }
@@ -529,12 +552,16 @@ function SubmitForm({ profile, onSubmitted }) {
           </button>
         </div>
 
-        <label style={{ marginTop: 18 }}>Upload Bukti Transaksi (struk/foto, bisa lebih dari satu)</label>
+        <label style={{ marginTop: 18 }}>Upload Bukti Transaksi (struk/foto, bisa lebih dari satu, maks {MAX_FILE_MB}MB/file)</label>
         <input
           type="file"
           accept="image/*,.pdf"
           multiple
-          onChange={(e) => setFiles(Array.from(e.target.files))}
+          onChange={(e) => {
+            const { valid, rejected } = validatePickedFiles(e.target.files)
+            setFiles(valid)
+            setMsg(rejected.length ? rejected.join('\n') : '')
+          }}
         />
         {files.length > 0 && (
           <div className="checklist-line">{files.length} file dipilih: {files.map((f) => f.name).join(', ')}</div>
@@ -542,7 +569,7 @@ function SubmitForm({ profile, onSubmitted }) {
 
         <div className="total-line">Total: {rupiah(total)} &nbsp;•&nbsp; Alur Approval: <span style={{ color: 'var(--teal)', fontWeight: 700 }}>{approvalFlowLabel(profile.role, total)}</span></div>
 
-        {msg && <div className="error-text" style={{ color: msg.startsWith('✓') ? 'var(--success)' : 'var(--danger)' }}>{msg}</div>}
+        {msg && <div className="error-text" style={{ color: msg.startsWith('✓') ? 'var(--success)' : 'var(--danger)', whiteSpace: 'pre-line' }}>{msg}</div>}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
           <button className="btn btn-primary" disabled={saving}>
@@ -915,7 +942,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
         )}
       </div>
 
-      {msg && <div className="error-text" style={{ color: 'var(--danger)', marginBottom: 10 }}>{msg}</div>}
+      {msg && <div className="error-text" style={{ color: 'var(--danger)', marginBottom: 10, whiteSpace: 'pre-line' }}>{msg}</div>}
       {loadingData ? <SkeletonTable cols={5} rows={4} /> : rows.length === 0 ? (
         <div className="empty-state">Belum ada pengajuan.</div>
       ) : filtered.length === 0 ? (
@@ -1024,8 +1051,17 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                           </ul>
                         )}
 
-                        <label style={{ marginTop: 14 }}>Upload Bukti Transaksi Baru (opsional, file di atas tetap tersimpan, ini cuma menambah)</label>
-                        <input type="file" accept="image/*,.pdf" multiple onChange={(e) => setEditFiles(Array.from(e.target.files))} />
+                        <label style={{ marginTop: 14 }}>Upload Bukti Transaksi Baru (opsional, file di atas tetap tersimpan, ini cuma menambah, maks {MAX_FILE_MB}MB/file)</label>
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          multiple
+                          onChange={(e) => {
+                            const { valid, rejected } = validatePickedFiles(e.target.files)
+                            setEditFiles(valid)
+                            setMsg(rejected.length ? rejected.join('\n') : '')
+                          }}
+                        />
                         {editFiles.length > 0 && (
                           <div className="checklist-line">{editFiles.length} file dipilih: {editFiles.map((f) => f.name).join(', ')}</div>
                         )}
