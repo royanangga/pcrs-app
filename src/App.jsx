@@ -199,6 +199,45 @@ function attachmentUrl(filePath) {
   return supabase.storage.from('receipts').getPublicUrl(filePath).data.publicUrl
 }
 
+// Link attachment yang membuka PREVIEW di dalam modal (gambar/PDF ditampilkan
+// langsung), bukan <a target="_blank"> yang membuka tab baru dan memperlihatkan
+// URL storage-nya di address bar.
+function AttachmentPreviewLink({ a }) {
+  const [open, setOpen] = useState(false)
+  const url = attachmentUrl(a.file_path)
+  const isImage = /\.(png|jpe?g|gif|webp)$/i.test(a.file_name || '')
+  const isPdf = /\.pdf$/i.test(a.file_name || '')
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        style={{ background: 'none', border: 'none', padding: 0, color: 'var(--teal)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}
+      >
+        {a.file_name}
+      </button>
+      {open && (
+        <Portal>
+        <div className="modal-overlay" onClick={() => setOpen(false)}>
+          <div className="modal-box" style={{ width: 640, maxWidth: '96vw' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-close" onClick={() => setOpen(false)}><Icon name="x" size={16} /></div>
+            <h3 style={{ marginTop: 0, marginBottom: 12, fontSize: 15 }}>{a.file_name}</h3>
+            {isImage ? (
+              <img src={url} alt={a.file_name} style={{ maxWidth: '100%', maxHeight: '70vh', display: 'block', margin: '0 auto', borderRadius: 8 }} />
+            ) : isPdf ? (
+              <iframe src={url} title={a.file_name} style={{ width: '100%', height: '70vh', border: 'none', borderRadius: 8 }} />
+            ) : (
+              <div className="checklist-line">Preview tidak didukung untuk tipe file ini.</div>
+            )}
+          </div>
+        </div>
+        </Portal>
+      )}
+    </>
+  )
+}
+
 // ---------------------------------------------------------------- AUTH ----
 export function AuthScreen() {
   const [email, setEmail] = useState('')
@@ -917,7 +956,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                           <ul className="attachment-list">
                             {(attMap[r.id] || []).map((a) => (
                               <li key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                                <a href={attachmentUrl(a.file_path)} target="_blank" rel="noreferrer">{a.file_name}</a>
+                                <AttachmentPreviewLink a={a} />
                                 <button
                                   type="button"
                                   className="btn btn-danger btn-sm"
@@ -975,7 +1014,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                             <ul className="attachment-list">
                               {(attMap[r.id] || []).map((a) => (
                                 <li key={a.id}>
-                                  <a href={attachmentUrl(a.file_path)} target="_blank" rel="noreferrer">{a.file_name}</a>
+                                  <AttachmentPreviewLink a={a} />
                                 </li>
                               ))}
                             </ul>
@@ -1693,7 +1732,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
                             <ul className="attachment-list">
                               {(attMap[r.id] || []).map((a) => (
                                 <li key={a.id}>
-                                  <a href={attachmentUrl(a.file_path)} target="_blank" rel="noreferrer">{a.file_name}</a>
+                                  <AttachmentPreviewLink a={a} />
                                 </li>
                               ))}
                             </ul>
