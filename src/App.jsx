@@ -201,6 +201,7 @@ async function fetchAttachments(reimbursementId) {
 // setAlertMsg('teks pesan') menggantikan alert('teks pesan')
 // {alertMsg && <SimpleAlertModal text={alertMsg} onClose={() => setAlertMsg('')} />}
 function SimpleAlertModal({ text, onClose }) {
+  useEscapeToClose(onClose, true)
   const isError = /gagal|error/i.test(text)
   return (
     <Portal>
@@ -255,6 +256,22 @@ function stripThousands(value) {
   return String(value ?? '').replace(/\D/g, '')
 }
 
+// Tutup modal manapun dengan tombol Escape. Dipakai di setiap komponen yang
+// punya modal -- `active` menentukan listener cuma terpasang saat modal itu
+// benar-benar terbuka, `onClose` adalah aksi penutup yang sama persis dengan
+// yang dipakai tombol/klik-overlay-nya (termasuk guard `!saving`/`!processing`
+// kalau ada, supaya konsisten -- tidak bisa ditutup paksa saat proses berjalan).
+function useEscapeToClose(onClose, active) {
+  useEffect(() => {
+    if (!active) return
+    function handler(e) {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [active, onClose])
+}
+
 function attachmentUrl(filePath) {
   return supabase.storage.from('receipts').getPublicUrl(filePath).data.publicUrl
 }
@@ -265,6 +282,7 @@ function attachmentUrl(filePath) {
 function AttachmentPreviewLink({ a }) {
   const [open, setOpen] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  useEscapeToClose(() => setOpen(false), open)
   const url = attachmentUrl(a.file_path)
   const isImage = /\.(png|jpe?g|gif|webp)$/i.test(a.file_name || '')
   const isPdf = /\.pdf$/i.test(a.file_name || '')
@@ -373,6 +391,7 @@ function SubmitForm({ profile, onSubmitted }) {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
+  useEscapeToClose(() => setShowConfirm(false), showConfirm)
 
   const total = items.reduce((s, it) => s + (Number(it.amount) || 0), 0)
 
@@ -731,6 +750,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
   const [page, setPage]           = useState(1)
   const [pageSize, setPageSize]   = useState(10)
   const [confirmModal, setConfirmModal] = useState(null) // { type: 'submit' | 'delete', row }
+  useEscapeToClose(() => !saving && setConfirmModal(null), !!confirmModal)
 
   const load = useCallback(async () => {
     setLoadingData(true)
@@ -1220,6 +1240,8 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
   const [confirm, setConfirm] = useState(null)         // single: { row, action }
   const [bulkConfirm, setBulkConfirm] = useState(null) // bulk: { action }
   const [processing, setProcessing] = useState(false)
+  useEscapeToClose(() => !processing && setConfirm(null), !!confirm)
+  useEscapeToClose(() => !processing && setBulkConfirm(null), !!bulkConfirm)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [alertMsg, setAlertMsg] = useState('')
@@ -1688,6 +1710,7 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [alertMsg, setAlertMsg] = useState('')
+  useEscapeToClose(() => !processing && setConfirm(null), !!confirm)
 
   useEffect(() => {
     async function load() {
@@ -1963,6 +1986,7 @@ function CashBalance({ profile, refreshKey, onActed }) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
+  useEscapeToClose(() => setShowConfirm(false), showConfirm)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 

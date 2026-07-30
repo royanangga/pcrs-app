@@ -52,8 +52,25 @@ async function callAdminOps(session, payload) {
 // Dipakai lewat: const [askConfirm, confirmModal] = useConfirm()
 // Lalu: const ok = await askConfirm('Pesan konfirmasi...'); if (!ok) return
 // Render {confirmModal} di mana saja dalam JSX komponen yang memakainya.
+// Tutup modal manapun dengan tombol Escape (lihat App.jsx untuk versi yang sama).
+function useEscapeToClose(onClose, active) {
+  useEffect(() => {
+    if (!active) return
+    function handler(e) {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [active, onClose])
+}
+
 function useConfirm() {
   const [state, setState] = useState(null) // { message, title, danger, resolveFn }
+  const settle = (result) => {
+    if (state) state.resolveFn(result)
+    setState(null)
+  }
+  useEscapeToClose(() => settle(false), !!state)
 
   const askConfirm = useCallback((message, opts = {}) => {
     return new Promise((resolve) => {
@@ -66,11 +83,6 @@ function useConfirm() {
       })
     })
   }, [])
-
-  const settle = (result) => {
-    if (state) state.resolveFn(result)
-    setState(null)
-  }
 
   const confirmModal = state && (
     <Portal>
@@ -123,6 +135,7 @@ function AdminUsers() {
   const [showCreate, setShowCreate] = useState(false)
   const [createForm, setCreateForm] = useState({ full_name: '', email: '', password: '', department: '', role: 'employee' })
   const [pwModal, setPwModal] = useState(null)  // { id, email }
+  useEscapeToClose(() => setPwModal(null), !!pwModal)
   const [newPw, setNewPw] = useState('')
   const [msg, setMsg] = useState({ text: '', type: '' })
   const [loading, setLoading] = useState(false)
@@ -260,6 +273,7 @@ function AdminUsers() {
 
   // pengajuan yang butuh reassign setelah nonaktifkan user
   const [reassignModal, setReassignModal] = useState(null) // { resignedUser, rows, picks }
+  useEscapeToClose(() => setReassignModal(null), !!reassignModal)
   const [savingReassign, setSavingReassign] = useState(false)
 
   // Ambil daftar pengajuan yang sedang menunggu approval role & department user ini
