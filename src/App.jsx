@@ -243,6 +243,18 @@ function validatePickedFiles(fileList) {
   return { valid, rejected }
 }
 
+// Format angka mentah jadi berpemisah ribuan ala Indonesia ("5000000" -> "5.000.000")
+// saat diketik, TANPA mengubah representasi angka mentah yang disimpan di state
+// (jadi Number(value) di tempat lain tetap jalan seperti biasa).
+function formatThousands(value) {
+  const digits = String(value ?? '').replace(/\D/g, '')
+  if (!digits) return ''
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+}
+function stripThousands(value) {
+  return String(value ?? '').replace(/\D/g, '')
+}
+
 function attachmentUrl(filePath) {
   return supabase.storage.from('receipts').getPublicUrl(filePath).data.publicUrl
 }
@@ -536,7 +548,14 @@ function SubmitForm({ profile, onSubmitted }) {
             </div>
             <div>
               <label>Nominal</label>
-              <input type="number" min="1" value={it.amount} onChange={(e) => updateItem(i, 'amount', e.target.value)} required />
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="0"
+                value={formatThousands(it.amount)}
+                onChange={(e) => updateItem(i, 'amount', stripThousands(e.target.value))}
+                required
+              />
             </div>
             <div>
               {items.length > 1 && (
@@ -1010,7 +1029,14 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                             </div>
                             <div>
                               <label>Nominal</label>
-                              <input type="number" min="1" value={it.amount} onChange={(e) => updateEditItem(i, 'amount', e.target.value)} required />
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                placeholder="0"
+                                value={formatThousands(it.amount)}
+                                onChange={(e) => updateEditItem(i, 'amount', stripThousands(e.target.value))}
+                                required
+                              />
                             </div>
                             <div>
                               {editItems.length > 1 && (
@@ -2071,12 +2097,11 @@ function CashBalance({ profile, refreshKey, onActed }) {
         <form onSubmit={handleSubmit}>
           <label>Nominal (Rp)</label>
           <input
-            type="number"
-            min="1"
-            step="1"
-            placeholder="cth. 5000000"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            type="text"
+            inputMode="numeric"
+            placeholder="cth. 5.000.000"
+            value={formatThousands(amount)}
+            onChange={(e) => setAmount(stripThousands(e.target.value))}
             required
           />
           <label>Tanggal</label>

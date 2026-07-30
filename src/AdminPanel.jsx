@@ -6,6 +6,18 @@ import Portal from './Portal.jsx'
 
 const ROLES = ['employee', 'supervisor', 'manager', 'admin']
 
+// Format angka mentah jadi berpemisah ribuan saat diketik (lihat App.jsx untuk
+// versi yang sama -- didup di sini karena tiap file punya helper lokal sendiri,
+// konsisten dengan pola rupiah() yang juga didup).
+function formatThousands(value) {
+  const digits = String(value ?? '').replace(/\D/g, '')
+  if (!digits) return ''
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+}
+function stripThousands(value) {
+  return String(value ?? '').replace(/\D/g, '')
+}
+
 const STATUS_OPTIONS = ['draft', 'submitted', 'approved', 'finance_approved', 'verified', 'rejected', 'revision']
 
 const STATUS_LABEL = {
@@ -801,7 +813,7 @@ function AdminTransactions() {
                   {editing === key ? (
                     isTopup ? (
                       <>
-                        <td><input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} style={{ width: 110 }} /></td>
+                        <td><input type="text" inputMode="numeric" value={formatThousands(form.amount)} onChange={(e) => setForm({ ...form, amount: stripThousands(e.target.value) })} style={{ width: 110 }} /></td>
                         <td>
                           <input type="date" value={form.topup_date} onChange={(e) => setForm({ ...form, topup_date: e.target.value })} style={{ width: 130 }} />
                         </td>
@@ -812,7 +824,7 @@ function AdminTransactions() {
                       </>
                     ) : (
                       <>
-                        <td><input type="number" value={form.total_amount} onChange={(e) => setForm({ ...form, total_amount: e.target.value })} style={{ width: 110 }} /></td>
+                        <td><input type="text" inputMode="numeric" value={formatThousands(form.total_amount)} onChange={(e) => setForm({ ...form, total_amount: stripThousands(e.target.value) })} style={{ width: 110 }} /></td>
                         <td>
                           <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
                             {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
