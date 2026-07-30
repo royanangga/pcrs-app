@@ -292,8 +292,8 @@ function AttachmentPreviewLink({ a }) {
             <h3 style={{ marginTop: 0, marginBottom: 4, fontSize: 15 }}>{a.file_name}</h3>
             <button
               type="button"
-              className="btn btn-sm"
-              style={{ background: '#f1f3f5', color: '#333', marginBottom: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+              className="btn btn-sm btn-neutral"
+              style={{ marginBottom: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}
               onClick={handleDownload}
               disabled={downloading}
             >
@@ -547,7 +547,7 @@ function SubmitForm({ profile, onSubmitted }) {
         ))}
 
         <div style={{ marginTop: 12 }}>
-          <button type="button" className="btn btn-outline" style={{ background: '#f1f3f5', color: '#333' }} onClick={addItem}>
+          <button type="button" className="btn btn-neutral" onClick={addItem}>
             + Tambah Item
           </button>
         </div>
@@ -577,8 +577,7 @@ function SubmitForm({ profile, onSubmitted }) {
           </button>
           <button
             type="button"
-            className="btn btn-sm"
-            style={{ background: '#f1f3f5', color: '#333' }}
+            className="btn btn-sm btn-neutral"
             disabled={saving}
             onClick={handleSaveDraft}
           >
@@ -664,7 +663,7 @@ function SubmitForm({ profile, onSubmitted }) {
           )}
 
           <div className="confirm-actions" style={{ marginTop: 18 }}>
-            <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => setShowConfirm(false)}>
+            <button className="btn btn-neutral" style={{ flex: 1 }} onClick={() => setShowConfirm(false)}>
               Kembali & Edit
             </button>
             <button className="btn btn-primary" style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={handleConfirmedSubmit}>
@@ -936,7 +935,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
           />
         </div>
         {search && (
-          <button type="button" className="btn btn-sm" style={{ background: '#eee', color: '#555', display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => setSearch('')}>
+          <button type="button" className="btn btn-sm btn-neutral" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => setSearch('')}>
             <Icon name="x" size={12} /> Bersihkan
           </button>
         )}
@@ -1021,7 +1020,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                           </div>
                         ))}
 
-                        <button type="button" className="btn btn-sm" style={{ background: '#f1f3f5', color: '#333', marginTop: 10 }} onClick={addEditItem}>
+                        <button type="button" className="btn btn-sm btn-neutral" style={{ marginTop: 10 }} onClick={addEditItem}>
                           + Tambah Item
                         </button>
 
@@ -1071,7 +1070,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                             {saving ? <><span className="spinner" />Menyimpan...</> : <><Icon name="check" size={13} /> {r.status === 'draft' ? 'Kirim Sekarang' : 'Submit Ulang'}</>}
                           </button>
                           {r.status === 'draft' && (
-                            <button className="btn btn-sm" style={{ background: '#f1f3f5', color: '#333' }} onClick={() => saveDraftEdit(r)} disabled={saving}>
+                            <button className="btn btn-sm btn-neutral" onClick={() => saveDraftEdit(r)} disabled={saving}>
                               Simpan sebagai Draft
                             </button>
                           )}
@@ -1080,7 +1079,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                               Hapus Draft
                             </button>
                           )}
-                          <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} onClick={() => setEditId(null)}>
+                          <button className="btn btn-sm btn-neutral" onClick={() => setEditId(null)}>
                             Batal
                           </button>
                         </div>
@@ -1159,7 +1158,7 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
             )}
 
             <div className="confirm-actions">
-              <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => setConfirmModal(null)} disabled={saving}>
+              <button className="btn btn-neutral" style={{ flex: 1 }} onClick={() => setConfirmModal(null)} disabled={saving}>
                 Batal
               </button>
               <button
@@ -1459,7 +1458,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
               <button className="btn btn-success btn-sm" onClick={() => setBulkConfirm({ action: 'approved' })}><Icon name="check" size={12} /> Approve Semua</button>
               <button className="btn btn-danger btn-sm" onClick={() => setBulkConfirm({ action: 'rejected' })}><Icon name="x" size={12} /> Reject Semua</button>
               <button className="btn btn-sm" style={{ background: '#ffe6cc', color: '#b35900' }} onClick={() => setBulkConfirm({ action: 'revision' })}><Icon name="undo" size={12} /> Revisi Semua</button>
-              <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} onClick={() => setSelected([])}>Batal Pilih</button>
+              <button className="btn btn-sm btn-neutral" onClick={() => setSelected([])}>Batal Pilih</button>
             </div>
           </div>
         )}
@@ -1565,8 +1564,8 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
 
             <div className="confirm-actions">
               <button
-                className="btn"
-                style={{ background: '#f1f3f5', color: '#333', flex: 1 }}
+                className="btn btn-neutral"
+                style={{ flex: 1 }}
                 onClick={() => setConfirm(null)}
                 disabled={processing}
               >
@@ -1621,7 +1620,7 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
             )}
 
             <div className="confirm-actions">
-              <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => setBulkConfirm(null)} disabled={processing}>
+              <button className="btn btn-neutral" style={{ flex: 1 }} onClick={() => setBulkConfirm(null)} disabled={processing}>
                 Batal
               </button>
               <button
@@ -1890,8 +1889,8 @@ function FinanceVerification({ profile, refreshKey, onActed }) {
 
             <div className="confirm-actions">
               <button
-                className="btn"
-                style={{ background: '#f1f3f5', color: '#333', flex: 1 }}
+                className="btn btn-neutral"
+                style={{ flex: 1 }}
                 onClick={() => setConfirm(null)}
                 disabled={processing}
               >
@@ -2153,7 +2152,7 @@ function CashBalance({ profile, refreshKey, onActed }) {
             </div>
 
             <div className="confirm-actions">
-              <button className="btn" style={{ background: '#f1f3f5', color: '#333', flex: 1 }} onClick={() => setShowConfirm(false)} disabled={saving}>
+              <button className="btn btn-neutral" style={{ flex: 1 }} onClick={() => setShowConfirm(false)} disabled={saving}>
                 Batal
               </button>
               <button className="btn" style={{ background: '#1f8a4c', color: '#fff', flex: 1 }} onClick={confirmTopup} disabled={saving}>
@@ -2742,10 +2741,10 @@ function MyProfile({ profile, onUpdated }) {
           <button className="btn btn-primary" disabled={saving} onClick={saveDrawing} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             {saving ? 'Menyimpan...' : <><Icon name="check" size={14} /> Simpan Tanda Tangan</>}
           </button>
-          <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} disabled={saving} onClick={clearCanvas}>
+          <button className="btn btn-sm btn-neutral" disabled={saving} onClick={clearCanvas}>
             Bersihkan Kanvas
           </button>
-          <button className="btn btn-sm" style={{ background: '#eee', color: '#555', display: 'inline-flex', alignItems: 'center', gap: 5 }} disabled={saving} onClick={() => fileInputRef.current?.click()}>
+          <button className="btn btn-sm btn-neutral" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }} disabled={saving} onClick={() => fileInputRef.current?.click()}>
             <Icon name="upload" size={12} /> Unggah Gambar
           </button>
           {signatureUrl && (
@@ -3191,7 +3190,7 @@ function Dashboard({ refreshKey, profile }) {
               >
                 {exporting ? <><span className="spinner" />Menyiapkan...</> : <><Icon name="barChart" size={13} /> Export Excel</>}
               </button>
-              <button className="btn btn-sm" style={{ background: '#eee', color: '#555' }} onClick={() => setSelectedPrintIds([])}>Batal Pilih</button>
+              <button className="btn btn-sm btn-neutral" onClick={() => setSelectedPrintIds([])}>Batal Pilih</button>
             </div>
             {selectedIgnoredCount > 0 && (
               <div style={{ flexBasis: '100%', fontSize: 12, color: '#ffe9b3', display: 'flex', alignItems: 'center', gap: 5 }}>

@@ -416,6 +416,7 @@ body {
 .btn-outline { background: transparent; border: 1px solid rgba(255,255,255,0.4); color: #fff; }
 .btn-danger  { background: var(--danger); color: #fff; }
 .btn-success { background: var(--success); color: #fff; }
+.btn-neutral { background: var(--btn-neutral-bg); color: var(--btn-neutral-text); }
 .btn-sm { padding: 5px 10px; font-size: 12px; }
 
 /* Mobile hamburger */

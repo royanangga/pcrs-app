@@ -70,7 +70,7 @@ function useConfirm() {
         <h3 className="confirm-title">{state.title}</h3>
         <p className="confirm-desc" style={{ whiteSpace: 'pre-line' }}>{state.message}</p>
         <div className="confirm-actions">
-          <button className="btn" style={{ background: 'var(--btn-neutral-bg)', color: 'var(--btn-neutral-text)', flex: 1 }} onClick={() => settle(false)}>
+          <button className="btn btn-neutral" style={{ flex: 1 }} onClick={() => settle(false)}>
             Batal
           </button>
           <button
@@ -467,7 +467,7 @@ function AdminUsers() {
                   <td>{(u.status || 'active') === 'resigned' ? 'Resign' : 'Aktif'}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="btn btn-success btn-sm" onClick={() => saveEdit(u)} disabled={loading}>Simpan</button>{' '}
-                    <button className="btn btn-sm" style={{ background: '#eee' }} onClick={() => setEditing(null)}>Batal</button>
+                    <button className="btn btn-sm btn-neutral" onClick={() => setEditing(null)}>Batal</button>
                   </td>
                 </>
               ) : (
@@ -521,7 +521,7 @@ function AdminUsers() {
               <label>Password Baru (min. 6 karakter)</label>
               <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} required minLength={6} autoFocus />
               <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                <button type="button" className="btn btn-sm" style={{ background: '#eee', flex: 1 }} onClick={() => setPwModal(null)}>Batal</button>
+                <button type="button" className="btn btn-sm btn-neutral" style={{ flex: 1 }} onClick={() => setPwModal(null)}>Batal</button>
                 <button type="submit" className="btn btn-primary btn-sm" style={{ flex: 1 }} disabled={loading || newPw.length < 6}>
                   {loading ? 'Memproses...' : 'Simpan Password'}
                 </button>
@@ -563,7 +563,7 @@ function AdminUsers() {
               ))}
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-              <button type="button" className="btn btn-sm" style={{ background: '#eee', flex: 1 }} onClick={() => setReassignModal(null)}>Tutup</button>
+              <button type="button" className="btn btn-sm btn-neutral" style={{ flex: 1 }} onClick={() => setReassignModal(null)}>Tutup</button>
               <button type="button" className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={saveReassign} disabled={savingReassign}>
                 {savingReassign ? 'Menyimpan...' : 'Simpan Delegasi'}
               </button>
@@ -807,7 +807,7 @@ function AdminTransactions() {
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
                           <button className="btn btn-success btn-sm" onClick={() => saveEdit(row)}>Simpan</button>{' '}
-                          <button className="btn btn-sm" style={{ background: '#eee' }} onClick={() => setEditing(null)}>Batal</button>
+                          <button className="btn btn-sm btn-neutral" onClick={() => setEditing(null)}>Batal</button>
                         </td>
                       </>
                     ) : (
@@ -820,7 +820,7 @@ function AdminTransactions() {
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
                           <button className="btn btn-success btn-sm" onClick={() => saveEdit(row)}>Simpan</button>{' '}
-                          <button className="btn btn-sm" style={{ background: '#eee' }} onClick={() => setEditing(null)}>Batal</button>
+                          <button className="btn btn-sm btn-neutral" onClick={() => setEditing(null)}>Batal</button>
                         </td>
                       </>
                     )
