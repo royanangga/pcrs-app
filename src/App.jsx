@@ -410,6 +410,10 @@ function SubmitForm({ profile, onSubmitted }) {
   function handleClickSubmit(e) {
     e.preventDefault()
     setMsg('')
+    if (items.length === 0) {
+      setMsg('Tambahkan minimal 1 item sebelum submit.')
+      return
+    }
     if (items.some((it) => !it.expense_date || !it.amount)) {
       setMsg('Lengkapi semua tanggal dan nominal item.')
       return
@@ -418,6 +422,10 @@ function SubmitForm({ profile, onSubmitted }) {
   }
 
   async function handleSaveDraft() {
+    if (items.length === 0) {
+      setMsg('Tambahkan minimal 1 item sebelum menyimpan draft.')
+      return
+    }
     if (items.some((it) => !it.expense_date || !it.amount)) {
       setMsg('Lengkapi semua tanggal dan nominal item.')
       return
@@ -578,7 +586,15 @@ function SubmitForm({ profile, onSubmitted }) {
             </div>
             <div>
               {items.length > 1 && (
-                <button type="button" className="btn btn-danger btn-sm" onClick={() => removeItem(i)}>Hapus</button>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  onClick={() => removeItem(i)}
+                  disabled={items.length === 1}
+                  title={items.length === 1 ? 'Minimal harus ada 1 item' : undefined}
+                >
+                  Hapus
+                </button>
               )}
             </div>
           </div>
@@ -847,6 +863,10 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
   }
 
   async function saveDraftEdit(r) {
+    if (editItems.length === 0) {
+      setMsg('Tambahkan minimal 1 item sebelum menyimpan draft.')
+      return
+    }
     if (editItems.some((it) => !it.expense_date || !it.amount)) {
       setMsg('Lengkapi semua tanggal dan nominal item.')
       return
@@ -883,6 +903,10 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
   }
 
   async function submitRevision(r) {
+    if (editItems.length === 0) {
+      setMsg('Tambahkan minimal 1 item sebelum submit.')
+      return
+    }
     if (editItems.some((it) => !it.expense_date || !it.amount)) {
       setMsg('Lengkapi semua tanggal dan nominal item.')
       return
@@ -1060,7 +1084,15 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                             </div>
                             <div>
                               {editItems.length > 1 && (
-                                <button type="button" className="btn btn-danger btn-sm" onClick={() => removeEditItem(i)}>Hapus</button>
+                                <button
+                                  type="button"
+                                  className="btn btn-danger btn-sm"
+                                  onClick={() => removeEditItem(i)}
+                                  disabled={editItems.length === 1}
+                                  title={editItems.length === 1 ? 'Minimal harus ada 1 item' : undefined}
+                                >
+                                  Hapus
+                                </button>
                               )}
                             </div>
                           </div>
@@ -1112,7 +1144,16 @@ function MyRequests({ profile, refreshKey, onRefresh }) {
                         )}
 
                         <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-                          <button className="btn btn-primary" onClick={() => setConfirmModal({ type: 'submit', row: r })} disabled={saving}>
+                          <button
+                            className="btn btn-primary"
+                            onClick={() => {
+                              if (editItems.length === 0) { setMsg('Tambahkan minimal 1 item sebelum submit.'); return }
+                              if (editItems.some((it) => !it.expense_date || !it.amount)) { setMsg('Lengkapi semua tanggal dan nominal item.'); return }
+                              setMsg('')
+                              setConfirmModal({ type: 'submit', row: r })
+                            }}
+                            disabled={saving}
+                          >
                             {saving ? <><span className="spinner" />Menyimpan...</> : <><Icon name="check" size={13} /> {r.status === 'draft' ? 'Kirim Sekarang' : 'Submit Ulang'}</>}
                           </button>
                           {r.status === 'draft' && (
