@@ -1413,17 +1413,6 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
     }
   }
 
-  // ---- Select helpers ----
-  const allSelected = rows.length > 0 && selected.length === rows.length
-  const someSelected = selected.length > 0 && selected.length < rows.length
-
-  function toggleOne(id) {
-    setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
-  }
-  function toggleAll() {
-    setSelected(allSelected ? [] : rows.map((r) => r.id))
-  }
-
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
   useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
 
@@ -1431,6 +1420,25 @@ function ApprovalQueue({ profile, refreshKey, onActed }) {
     const start = (page - 1) * pageSize
     return rows.slice(start, start + pageSize)
   }, [rows, page, pageSize])
+
+  // ---- Select helpers ----
+  // PENTING: "pilih semua" cuma memilih baris di HALAMAN YANG SEDANG TAMPIL
+  // (pageRows), bukan seluruh data di semua halaman (rows) -- supaya tidak
+  // diam-diam ikut memproses (approve/reject massal) baris yang belum pernah
+  // dilihat user di halaman lain. Pola yang sama dipakai di Dashboard untuk
+  // fitur cetak massal.
+  const allSelected = pageRows.length > 0 && pageRows.every((r) => selected.includes(r.id))
+  const someSelected = pageRows.some((r) => selected.includes(r.id)) && !allSelected
+
+  function toggleOne(id) {
+    setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
+  }
+  function toggleAll() {
+    const pageIds = pageRows.map((r) => r.id)
+    setSelected((prev) => allSelected
+      ? prev.filter((id) => !pageIds.includes(id))
+      : [...new Set([...prev, ...pageIds])])
+  }
 
   // ---- Bulk confirm action ----
   async function confirmBulkAct() {
