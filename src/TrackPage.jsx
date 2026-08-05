@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from './supabaseClient'
-import { AuthScreen } from './App.jsx'
+import AuthScreen from './AuthScreen.jsx'
 import { printSlipByRequestNo } from './slip.js'
 import Icon from './icons.jsx'
 

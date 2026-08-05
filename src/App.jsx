@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import QRCode from 'qrcode'
 import { supabase } from './supabaseClient'
 import AdminPanel from './AdminPanel.jsx'
 import Pagination from './Pagination.jsx'
@@ -9,380 +8,40 @@ import NotificationBell from './Notifications.jsx'
 import Icon, { Ico } from './icons.jsx'
 import Portal from './Portal.jsx'
 
-const CATEGORIES = ['Transport', 'Meal', 'Office Supplies', 'Communication', 'Accommodation', 'Other']
-
-const STATUS_LABEL = {
-  draft: 'Draft',
-  submitted: 'Menunggu Approval',
-  approved: 'Menunggu Approval Finance Manager',
-  finance_approved: 'Disetujui Finance Manager — Menunggu Pencairan',
-  verified: 'Terverifikasi (Sudah Dicairkan)',
-  rejected: 'Ditolak',
-  revision: 'Perlu Revisi',
-}
-
-// Nama department yang dianggap "Finance" (bisa disesuaikan sesuai penamaan
-// department di organisasi Anda). Pencocokan tidak case-sensitive.
-const FINANCE_DEPARTMENT = 'Finance'
-
-// User dianggap "Finance" (boleh lihat semua pengajuan lintas departemen &
-// melakukan Finance Verification) kalau department-nya Finance — TIDAK PEDULI
-// role-nya (Employee/Supervisor/Manager di department Finance semua berlaku
-// sama, bisa melihat & melakukan verifikasi). Admin juga selalu dianggap Finance.
-// "Finance Manager" di sini bukan role tersendiri — cukup user dengan
-// department = Finance (role apa pun), sesuai struktur organisasi yang ada.
-function isFinanceUser(profile) {
-  if (!profile) return false
-  if (profile.role === 'admin') return true
-  return (profile.department || '').trim().toLowerCase() === FINANCE_DEPARTMENT.toLowerCase()
-}
-
-// Finance Manager = user dengan role 'manager' DAN department 'Finance' (bukan
-// role tersendiri). Hanya Finance Manager (atau Admin) yang boleh melakukan
-// approval SEBELUM uang dicairkan (tahap "Approval Finance Manager"). Berbeda
-// dengan isFinanceUser() di atas yang mengizinkan SEMUA orang di department
-// Finance untuk tahap "Finance Verification" (SETELAH uang dicairkan).
-function isFinanceManager(profile) {
-  if (!profile) return false
-  if (profile.role === 'admin') return true
-  return profile.role === 'manager' && (profile.department || '').trim().toLowerCase() === FINANCE_DEPARTMENT.toLowerCase()
-}
-
-// Label nama tahap approver untuk ditampilkan ke user (sesuai kolom required_role)
-const APPROVER_ROLE_LABEL = {
-  supervisor: 'SPV Departemen',
-  manager: 'Manager Departemen',
-}
-
-// Label status yang lebih jelas: kalau masih 'submitted', sebutkan menunggu
-// approval dari siapa (berdasarkan required_role), bukan cuma "Menunggu Approval".
-function statusLabelFor(row) {
-  if (!row) return ''
-  if (row.status === 'submitted') {
-    const approverLabel = APPROVER_ROLE_LABEL[row.required_role] || row.required_role
-    return `Menunggu Approval ${approverLabel}`
-  }
-  return STATUS_LABEL[row.status] || row.status
-}
-
-// Batas nominal yang mewajibkan approval tambahan dari Manager Departemen
-// (hanya berlaku untuk pengaju Employee — lihat requiredRoleFor)
-const MANAGER_THRESHOLD = 5000000
-
-// Role yang tidak punya atasan lagi di departemennya sendiri (level Manager ke
-// atas): pengajuan mereka langsung lanjut ke Finance Verification tanpa
-// approval departemen sama sekali. Berlaku sama untuk semua departemen,
-// termasuk department Finance sendiri (Manager di department Finance yang
-// mengajukan juga langsung ke Finance Verification tanpa approval SPV).
-const SKIP_DEPT_APPROVAL_ROLES = ['manager', 'admin']
-
-// Role yang approval-diri-sendiri di-skip, langsung ke atasan terkait (bukan
-// dihilangkan sepenuhnya seperti Manager/Admin di atas). Saat ini hanya
-// Supervisor: seorang Supervisor yang mengajukan reimbursement tidak perlu
-// (dan tidak boleh) di-approve oleh sesama Supervisor, jadi langsung
-// diteruskan ke Manager Departemen (atasannya).
-const SELF_SKIP_TO_MANAGER_ROLES = ['supervisor']
-
-// Menentukan status awal & tahap approval pertama saat pengajuan dibuat/disubmit ulang:
-//  - Pengaju = Manager/Admin (semua nominal) -> tidak ada approval departemen,
-//    status langsung 'approved' (siap masuk antrian Approval Finance Manager)
-//  - Pengaju = Supervisor -> approval diri sendiri di-skip, langsung ke Manager
-//    Departemen (status 'submitted', required_role = 'manager')
-//  - Pengaju = Employee -> mulai dari approval Supervisor (status 'submitted')
-//
-// Alur status lengkap sebuah pengajuan:
-//   submitted (approval pimpinan departemen: Supervisor/Manager)
-//     -> approved (menunggu Approval Finance Manager, SEBELUM uang dicairkan)
-//     -> finance_approved (disetujui Finance Manager, siap dicairkan)
-//     -> verified (Finance Verification, SETELAH uang benar-benar dicairkan)
-function requiredRoleFor(submitterRole) {
-  if (SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)) return 'manager' // placeholder, tak dipakai (status langsung 'approved')
-  if (SELF_SKIP_TO_MANAGER_ROLES.includes(submitterRole)) return 'manager'
-  return 'supervisor'
-}
-
-function initialStatusFor(submitterRole) {
-  return SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole) ? 'approved' : 'submitted'
-}
-
-// Menentukan tahap approval berikutnya SETELAH sebuah step di-approve.
-// currentRole = required_role saat ini (tahap yang baru saja approve)
-// Return null artinya tidak ada approval lagi -> lanjut ke Finance Verification (status = 'approved')
-function nextApprovalRole(currentRole, submitterRole, total) {
-  // Kalau pengaju adalah Supervisor, tahap 'manager' ini menggantikan approval
-  // dirinya sendiri (atasan terkait) -> setelah Manager approve, selesai,
-  // TIDAK tergantung nominal.
-  if (SELF_SKIP_TO_MANAGER_ROLES.includes(submitterRole)) return null
-
-  const needsDeptManager = Number(total) >= MANAGER_THRESHOLD && !SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)
-  if (currentRole === 'supervisor') {
-    return needsDeptManager ? 'manager' : null
-  }
-  // currentRole === 'manager' -> selesai, lanjut Finance Verification
-  return null
-}
-
-function approvalFlowLabel(submitterRole, total) {
-  if (SKIP_DEPT_APPROVAL_ROLES.includes(submitterRole)) return 'Langsung ke Approval Finance Manager (tanpa approval departemen) → Finance Verification'
-  if (SELF_SKIP_TO_MANAGER_ROLES.includes(submitterRole)) return 'Manager Departemen → Approval Finance Manager → Finance Verification (approval SPV di-skip karena pengaju adalah SPV)'
-  if (Number(total) >= MANAGER_THRESHOLD) return 'Supervisor → Manager → Approval Finance Manager → Finance Verification (nominal ≥ Rp5jt)'
-  return 'Supervisor → Approval Finance Manager → Finance Verification'
-}
-
-// Guard anti race-condition: update HANYA berhasil kalau status baris masih
-// sama seperti saat dimuat di layar. Kalau sudah keburu diproses orang lain
-// (mis. dua approver klik bersamaan, atau Finance Verification & Approval
-// dibuka di 2 tab), `data` akan kosong -- munculkan pesan jelas, jangan
-// diam-diam menimpa/mendobel data. Dipakai di ApprovalQueue & FinanceVerification.
-async function updateWithGuard(id, expectedStatus, patch) {
-  const { data, error } = await supabase
-    .from('reimbursements')
-    .update(patch)
-    .eq('id', id)
-    .eq('status', expectedStatus)
-    .select('id')
-  if (error) return { error }
-  if (!data || data.length === 0) {
-    return { error: { message: 'Pengajuan ini sudah diproses oleh orang lain. Silakan refresh halaman.' } }
-  }
-  return { error: null }
-}
-
-function rupiah(n) {
-  return 'Rp ' + Number(n || 0).toLocaleString('id-ID')
-}
-
-function generateRequestNo() {
-  const now = new Date()
-  const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
-  const rand = Math.floor(Math.random() * 9000 + 1000)
-  return `PCR-${ym}-${rand}`
-}
-
-// Nomor pengisian kas otomatis, format mirip generateRequestNo() di atas
-// tapi pakai prefix "KAS-" supaya langsung kelihatan beda dari nomor
-// pengajuan reimbursement ("PCR-") walau cuma dilihat sekilas di tabel.
-function generateTopupNo() {
-  const now = new Date()
-  const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
-  const rand = Math.floor(Math.random() * 9000 + 1000)
-  return `KAS-${ym}-${rand}`
-}
-
-function QRBadge({ value, size = 90, label }) {
-  const [src, setSrc] = useState('')
-  useEffect(() => {
-    let active = true
-    QRCode.toDataURL(value, { width: size, margin: 1 }).then((url) => {
-      if (active) setSrc(url)
-    })
-    return () => { active = false }
-  }, [value, size])
-  if (!src) return null
-  return (
-    <div className="qr-box">
-      <img src={src} alt="QR Code" width={size} height={size} />
-      <div>{label || 'Scan untuk verifikasi'}</div>
-    </div>
-  )
-}
-
-async function fetchAttachments(reimbursementId) {
-  const { data } = await supabase
-    .from('attachments')
-    .select('*')
-    .eq('reimbursement_id', reimbursementId)
-  return data || []
-}
-
-// Pengganti alert() bawaan browser -- konsisten dengan gaya modal custom
-// yang dipakai di seluruh aplikasi. Dipakai lokal per-komponen:
-// const [alertMsg, setAlertMsg] = useState('')
-// setAlertMsg('teks pesan') menggantikan alert('teks pesan')
-// {alertMsg && <SimpleAlertModal text={alertMsg} onClose={() => setAlertMsg('')} />}
-function SimpleAlertModal({ text, onClose }) {
-  useEscapeToClose(onClose, true)
-  const isError = /gagal|error/i.test(text)
-  return (
-    <Portal>
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box confirm-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="confirm-icon" style={{ color: isError ? 'var(--danger, #d9534f)' : 'var(--teal)' }}>
-          <Icon name={isError ? 'x' : 'check'} size={28} />
-        </div>
-        <h3 className="confirm-title">{isError ? 'Terjadi Masalah' : 'Berhasil'}</h3>
-        <p className="confirm-desc" style={{ whiteSpace: 'pre-line' }}>{text}</p>
-        <div className="confirm-actions">
-          <button className="btn btn-primary" style={{ flex: 1 }} onClick={onClose}>OK</button>
-        </div>
-      </div>
-    </div>
-    </Portal>
-  )
-}
-
-const MAX_FILE_MB = 5
-const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf']
-
-// Validasi file yang dipilih user SEBELUM diupload -- supaya ada feedback
-// langsung ("tipe tidak didukung" / "ukuran kelebihan") alih-alih baru
-// ketahuan setelah proses upload jalan (atau malah gagal diam-diam).
-function validatePickedFiles(fileList) {
-  const valid = []
-  const rejected = []
-  for (const f of Array.from(fileList || [])) {
-    if (!ALLOWED_FILE_TYPES.includes(f.type)) {
-      rejected.push(`${f.name}: tipe file tidak didukung (cuma gambar JPG/PNG/GIF/WEBP atau PDF)`)
-      continue
-    }
-    if (f.size > MAX_FILE_MB * 1024 * 1024) {
-      rejected.push(`${f.name}: ukuran ${(f.size / 1024 / 1024).toFixed(1)}MB melebihi batas ${MAX_FILE_MB}MB`)
-      continue
-    }
-    valid.push(f)
-  }
-  return { valid, rejected }
-}
-
-// Format angka mentah jadi berpemisah ribuan ala Indonesia ("5000000" -> "5.000.000")
-// saat diketik, TANPA mengubah representasi angka mentah yang disimpan di state
-// (jadi Number(value) di tempat lain tetap jalan seperti biasa).
-function formatThousands(value) {
-  const digits = String(value ?? '').replace(/\D/g, '')
-  if (!digits) return ''
-  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
-}
-function stripThousands(value) {
-  return String(value ?? '').replace(/\D/g, '')
-}
-
-// Tutup modal manapun dengan tombol Escape. Dipakai di setiap komponen yang
-// punya modal -- `active` menentukan listener cuma terpasang saat modal itu
-// benar-benar terbuka, `onClose` adalah aksi penutup yang sama persis dengan
-// yang dipakai tombol/klik-overlay-nya (termasuk guard `!saving`/`!processing`
-// kalau ada, supaya konsisten -- tidak bisa ditutup paksa saat proses berjalan).
-function useEscapeToClose(onClose, active) {
-  useEffect(() => {
-    if (!active) return
-    function handler(e) {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [active, onClose])
-}
-
-function attachmentUrl(filePath) {
-  return supabase.storage.from('receipts').getPublicUrl(filePath).data.publicUrl
-}
-
-// Link attachment yang membuka PREVIEW di dalam modal (gambar/PDF ditampilkan
-// langsung), bukan <a target="_blank"> yang membuka tab baru dan memperlihatkan
-// URL storage-nya di address bar.
-function AttachmentPreviewLink({ a }) {
-  const [open, setOpen] = useState(false)
-  const [downloading, setDownloading] = useState(false)
-  useEscapeToClose(() => setOpen(false), open)
-  const url = attachmentUrl(a.file_path)
-  const isImage = /\.(png|jpe?g|gif|webp)$/i.test(a.file_name || '')
-  const isPdf = /\.pdf$/i.test(a.file_name || '')
-
-  // Download lewat blob (bukan cuma <a href download> ke URL publik lintas-origin,
-  // yang di banyak browser diabaikan/malah dibuka di tab baru). Blob URL selalu
-  // bersifat same-origin, jadi atribut `download` pasti dihormati browser.
-  async function handleDownload() {
-    setDownloading(true)
-    const { data, error } = await supabase.storage.from('receipts').download(a.file_path)
-    setDownloading(false)
-    if (error || !data) return
-    const blobUrl = URL.createObjectURL(data)
-    const link = document.createElement('a')
-    link.href = blobUrl
-    link.download = a.file_name || 'lampiran'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(blobUrl)
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        style={{ background: 'none', border: 'none', padding: 0, color: 'var(--teal)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}
-      >
-        {a.file_name}
-      </button>
-      {open && (
-        <Portal>
-        <div className="modal-overlay" onClick={() => setOpen(false)}>
-          <div className="modal-box" style={{ width: 640, maxWidth: '96vw' }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-close" onClick={() => setOpen(false)}><Icon name="x" size={16} /></div>
-            <h3 style={{ marginTop: 0, marginBottom: 4, fontSize: 15 }}>{a.file_name}</h3>
-            <button
-              type="button"
-              className="btn btn-sm btn-neutral"
-              style={{ marginBottom: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}
-              onClick={handleDownload}
-              disabled={downloading}
-            >
-              <Icon name="download" size={12} /> {downloading ? 'Mengunduh...' : 'Download'}
-            </button>
-            {isImage ? (
-              <img src={url} alt={a.file_name} style={{ maxWidth: '100%', maxHeight: '70vh', display: 'block', margin: '0 auto', borderRadius: 8 }} />
-            ) : isPdf ? (
-              <iframe src={url} title={a.file_name} style={{ width: '100%', height: '70vh', border: 'none', borderRadius: 8 }} />
-            ) : (
-              <div className="checklist-line">Preview tidak didukung untuk tipe file ini -- gunakan tombol Download di atas.</div>
-            )}
-          </div>
-        </div>
-        </Portal>
-      )}
-    </>
-  )
-}
-
-// ---------------------------------------------------------------- AUTH ----
-export function AuthScreen() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) setError('Email atau password salah.')
-    setLoading(false)
-  }
-
-  return (
-    <div className="login-wrap">
-      <form className="login-card" onSubmit={handleSubmit}>
-        <div className="login-logo">PCRS</div>
-        <h2 style={{ margin: '8px 0 4px' }}>Selamat Datang</h2>
-        <div className="sub">Petty Cash Reimbursement System</div>
-
-        <label>Email</label>
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="email@perusahaan.com" />
-        <label>Password</label>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} placeholder="••••••••" />
-
-        {error && <div className="error-text">{error}</div>}
-
-        <button className="btn btn-primary" style={{ width: '100%', marginTop: 16 }} disabled={loading}>
-          {loading ? <><span className="spinner" />Masuk...</> : 'Login'}
-        </button>
-
-        <div className="login-note">Belum punya akun? Hubungi Admin untuk mendaftar.</div>
-      </form>
-    </div>
-  )
-}
+import AuthScreen from './AuthScreen.jsx'
+import QRBadge from './components/QRBadge.jsx'
+import SimpleAlertModal from './components/SimpleAlertModal.jsx'
+import AttachmentPreviewLink from './components/AttachmentPreviewLink.jsx'
+import { useEscapeToClose } from './hooks/useEscapeToClose.js'
+import {
+  CATEGORIES,
+  STATUS_LABEL,
+  FINANCE_DEPARTMENT,
+  APPROVER_ROLE_LABEL,
+  MANAGER_THRESHOLD,
+  SKIP_DEPT_APPROVAL_ROLES,
+  SELF_SKIP_TO_MANAGER_ROLES,
+  MAX_FILE_MB,
+  ALLOWED_FILE_TYPES,
+} from './lib/constants.js'
+import {
+  isFinanceUser,
+  isFinanceManager,
+  statusLabelFor,
+  requiredRoleFor,
+  initialStatusFor,
+  nextApprovalRole,
+  approvalFlowLabel,
+  updateWithGuard,
+  rupiah,
+  generateRequestNo,
+  generateTopupNo,
+  fetchAttachments,
+  validatePickedFiles,
+  formatThousands,
+  stripThousands,
+  attachmentUrl,
+} from './lib/helpers.js'
 
 // ---------------------------------------------------------------- SUBMIT FORM ----
 function SubmitForm({ profile, onSubmitted }) {
