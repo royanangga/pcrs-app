@@ -18,6 +18,7 @@ import Dashboard from './pages/Dashboard.jsx'
 import QRBadge from './components/QRBadge.jsx'
 import SimpleAlertModal from './components/SimpleAlertModal.jsx'
 import AttachmentPreviewLink from './components/AttachmentPreviewLink.jsx'
+import SkeletonTable from './components/SkeletonTable.jsx'
 import { useEscapeToClose } from './hooks/useEscapeToClose.js'
 import {
   CATEGORIES,
@@ -398,24 +399,7 @@ function SubmitForm({ profile, onSubmitted }) {
 }
 
 // ---------------------------------------------------------------- MY REQUESTS ----
-function SkeletonTable({ cols = 4, rows = 4 }) {
-  return (
-    <div className="table-scroll">
-    <table>
-      <thead><tr>{Array(cols).fill(0).map((_, i) => <th key={i}><div className="skeleton-row short" /></th>)}</tr></thead>
-      <tbody>
-        {Array(rows).fill(0).map((_, i) => (
-          <tr key={i}>
-            {Array(cols).fill(0).map((_, j) => (
-              <td key={j}><div className={`skeleton-row ${j % 2 === 0 ? 'medium' : 'short'}`} /></td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-    </div>
-  )
-}
+// SkeletonTable dipindah ke src/components/SkeletonTable.jsx (lihat import di atas)
 
 function MyRequests({ profile, refreshKey, onRefresh }) {
   const [rows, setRows]           = useState([])

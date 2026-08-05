@@ -5,6 +5,7 @@ import Pagination from '../Pagination.jsx'
 import { printSlip as printSlipShared, printBulkSlips as printBulkSlipsShared } from '../slip.js'
 import { MonthlyBarChart, CategoryDonutChart } from '../Charts.jsx'
 import SimpleAlertModal from '../components/SimpleAlertModal.jsx'
+import SkeletonTable from '../components/SkeletonTable.jsx'
 import { CATEGORIES, STATUS_LABEL } from '../lib/constants.js'
 import { rupiah, isFinanceUser, statusLabelFor } from '../lib/helpers.js'
 
