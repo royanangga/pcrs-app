@@ -19,10 +19,21 @@ ke seluruh aplikasi** — jadi ini prioritas #1 kalau mau review ulang.
 |---|---|---|
 | `is_admin()` | `role = 'admin' AND status = 'active'` (auth.uid() saat ini) | Diperbaiki di v15 — sebelumnya tidak cek `status` |
 | `is_finance_or_admin(uid)` | `status = 'active' AND (role = 'admin' OR department = 'Finance')` | Diperbaiki di v15 — sebelumnya tidak cek `status` |
+| `get_tracking_info(request_no)` | RPC dipanggil `TrackPage.jsx` — info status pengajuan buat halaman Lacak Pengajuan | Diperbaiki di v16 — sebelumnya cek role `'finance_staff'/'finance_manager'` yang **tidak pernah ada** di sistem role app ini (harusnya department = 'Finance'), dan tidak cek `status` |
+| `get_tracking_attachments(request_no)` | RPC dipanggil `TrackPage.jsx` — daftar lampiran buat halaman yang sama | Bug & fix sama persis seperti `get_tracking_info` |
+| `my_role()` / `my_department()` | Helper ambil role/department milik diri sendiri | Tidak dipanggil dari frontend manapun (kemungkinan dead code) — tetap dikunci di v16 (`status = 'active'`) sebagai jaga-jaga murah kalau dipakai fungsi lain di kemudian hari |
 
 **Aturan wajib ke depan:** setiap fungsi keamanan baru yang dibuat **harus**
 ikut mengecek `status = 'active'` kalau merujuk ke `profiles`. Ini kelas bug
 yang paling gampang lolos karena "kelihatan benar" tapi diam-diam salah.
+
+**Cara ketemu 3 fungsi di atas (`get_tracking_*`, `my_*`):** bukan dari baca
+file migrasi (karena memang tidak pernah ada di file manapun — dibuat
+langsung di SQL Editor), tapi dari `rls-structural-checks.sql` query #3
+(cari fungsi yang query ke `profiles` tapi tidak menyebut `status`). Ini
+bukti nyata kenapa checklist di bagian 7 penting — masih ada kemungkinan
+fungsi lain yang belum ketemu kalau ada yang query ke tabel selain
+`profiles` dengan pola serupa.
 
 ---
 
@@ -140,6 +151,7 @@ ada review keamanan untuk ini sama sekali.
 - [ ] Bucket storage `signatures` belum pernah diaudit sama sekali.
 - [ ] `required_role` di `reimbursements` tidak divalidasi server-side terhadap nominal (aturan ">=5jt wajib ke Manager" cuma dijaga di client) — butuh kolusi dengan approver asli, risiko lebih rendah tapi tetap ada.
 - [ ] Grace period token JWT — user yang baru dinonaktifkan masih bisa pakai token lama sampai expired (default Supabase ~1 jam). Mitigasi: perpendek JWT expiry di Supabase Dashboard, atau cari cara invalidate session aktif saat deactivate.
+- [ ] Belum dikonfirmasi apakah `my_role()`/`my_department()` dipanggil dari fungsi SQL lain (bukan cuma dicek dari frontend) — kalau ternyata dead code beneran, pertimbangkan dihapus saja daripada dibiarkan nggak jelas dipakai atau tidak.
 
 ---
 
