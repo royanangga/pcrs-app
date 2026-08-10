@@ -1062,10 +1062,141 @@ function AdminHistory() {
   )
 }
 
+// ---- LAPORAN PENGAJUAN MACET (AGING) ----
+// Menampilkan SEMUA pengajuan yang masih menggantung (belum verified/
+// rejected/draft/revision), diurutkan dari yang paling lama menunggu.
+// Beda dengan peringatan yang muncul waktu nonaktifkan user (yang cuma
+// cek role & department tertentu) -- ini proaktif, mencakup SEMUA
+// penyebab macet (approver sibuk, lupa, dst -- bukan cuma karena resign).
+const AGING_STATUS_LABEL = {
+  submitted: 'Menunggu Approval Departemen',
+  approved: 'Menunggu Approval Finance Manager',
+  finance_approved: 'Disetujui, Menunggu Finance Verification',
+}
+
+function daysSince(dateStr) {
+  const ms = Date.now() - new Date(dateStr).getTime()
+  return Math.floor(ms / (1000 * 60 * 60 * 24))
+}
+
+function AdminAgingReport() {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [minDays, setMinDays] = useState(0)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await supabase
+      .from('reimbursements')
+      .select('id, request_no, status, required_role, total_amount, created_at, updated_at, profiles!employee_id(full_name, department)')
+      .in('status', ['submitted', 'approved', 'finance_approved'])
+      .order('updated_at', { ascending: true })
+    setRows(data || [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const filtered = useMemo(
+    () => rows.filter((r) => daysSince(r.updated_at) >= minDays),
+    [rows, minDays]
+  )
+
+  const stuckOver7 = rows.filter((r) => daysSince(r.updated_at) > 7).length
+  const stuckOver3 = rows.filter((r) => daysSince(r.updated_at) > 3).length
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  useEffect(() => { if (page > totalPages) setPage(totalPages) }, [totalPages, page])
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, page, pageSize])
+
+  return (
+    <div>
+      <h3 className="admin-section-title" style={{ margin: 0, border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
+        <Icon name="alertTriangle" size={16} /> Pengajuan Macet ({rows.length} sedang berjalan)
+      </h3>
+      <div className="checklist-line" style={{ marginBottom: 14 }}>
+        Semua pengajuan yang belum selesai (belum verified/ditolak), diurutkan dari yang paling lama menunggu di status saat ini.
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div className="stat-pill" style={{ background: stuckOver7 > 0 ? '#fbe2df' : '#d9f4e3', color: stuckOver7 > 0 ? '#c0392b' : '#1f8a4c' }}>
+          <strong>{stuckOver7}</strong> pengajuan &gt; 7 hari
+        </div>
+        <div className="stat-pill" style={{ background: stuckOver3 > 0 ? '#fff3cd' : '#d9f4e3', color: stuckOver3 > 0 ? '#664d03' : '#1f8a4c' }}>
+          <strong>{stuckOver3}</strong> pengajuan &gt; 3 hari
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+        <label style={{ fontSize: 13, color: 'var(--text-muted)' }}>Tampilkan minimal:</label>
+        <select value={minDays} onChange={(e) => { setMinDays(Number(e.target.value)); setPage(1) }}>
+          <option value={0}>Semua</option>
+          <option value={3}>&gt; 3 hari</option>
+          <option value={7}>&gt; 7 hari</option>
+          <option value={14}>&gt; 14 hari</option>
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="empty-state">Memuat...</div>
+      ) : filtered.length === 0 ? (
+        <div className="empty-state">Tidak ada pengajuan yang macet di ambang ini. 👍</div>
+      ) : (
+        <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>No. Request</th><th>Pengaju</th><th>Department</th><th>Status</th><th>Total</th><th>Sudah Berapa Lama</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.map((r) => {
+              const days = daysSince(r.updated_at)
+              const severity = days > 7 ? 'danger' : days > 3 ? 'warning' : 'normal'
+              return (
+                <tr key={r.id}>
+                  <td>{r.request_no}</td>
+                  <td>{r.profiles?.full_name || '—'}</td>
+                  <td>{r.profiles?.department || '—'}</td>
+                  <td>{AGING_STATUS_LABEL[r.status] || r.status}</td>
+                  <td>{rupiah(r.total_amount)}</td>
+                  <td>
+                    <span
+                      className="admin-role-badge"
+                      style={
+                        severity === 'danger' ? { background: '#fbe2df', color: '#c0392b' }
+                        : severity === 'warning' ? { background: '#fff3cd', color: '#664d03' }
+                        : { background: '#e8f0fe', color: '#1a56db' }
+                      }
+                    >
+                      {days === 0 ? 'Hari ini' : `${days} hari`}
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        </div>
+      )}
+
+      {filtered.length > 0 && (
+        <Pagination page={page} setPage={setPage} pageSize={pageSize} setPageSize={setPageSize} total={filtered.length} />
+      )}
+    </div>
+  )
+}
+
 // ---- MAIN ADMIN PANEL ----
 const ADMIN_TABS = [
   { key: 'users', label: <><Icon name="users" size={13} /> User</> },
   { key: 'transactions', label: <><Icon name="clipboard" size={13} /> Transaksi</> },
+  { key: 'aging', label: <><Icon name="alertTriangle" size={13} /> Pengajuan Macet</> },
   { key: 'history', label: <><Icon name="history" size={13} /> Riwayat</> },
 ]
 
@@ -1094,6 +1225,7 @@ export default function AdminPanel() {
       <div className="card" style={{ marginTop: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
         {activeTab === 'users' && <AdminUsers />}
         {activeTab === 'transactions' && <AdminTransactions />}
+        {activeTab === 'aging' && <AdminAgingReport />}
         {activeTab === 'history' && <AdminHistory />}
       </div>
     </div>

@@ -417,6 +417,7 @@ body {
 .btn-danger  { background: var(--danger); color: #fff; }
 .btn-success { background: var(--success); color: #fff; }
 .btn-neutral { background: var(--btn-neutral-bg); color: var(--btn-neutral-text); }
+.stat-pill { padding: 8px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; }
 .btn-sm { padding: 5px 10px; font-size: 12px; }
 
 /* Mobile hamburger */
