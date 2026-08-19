@@ -13,6 +13,9 @@ import ApprovalQueue from './pages/ApprovalQueue.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import SubmitForm from './pages/SubmitForm.jsx'
 import MyRequests from './pages/MyRequests.jsx'
+import InvoiceList from './pages/Invoice/InvoiceList.jsx'
+import InvoiceApproval from './pages/Invoice/InvoiceApproval.jsx'
+import InvoiceSettings from './pages/Invoice/InvoiceSettings.jsx'
 import { isFinanceUser } from './lib/helpers.js'
 
 // SubmitForm dipindah ke src/pages/SubmitForm.jsx
@@ -29,6 +32,9 @@ const PAGE_TITLE = {
   'cash-flow-report':     'Laporan Arus Kas',
   admin:                  'Admin Panel',
   signature:              'Tanda Tangan Saya',
+  'invoice-list':         'Daftar Invoice',
+  'invoice-approval':     'Approval Invoice',
+  'invoice-settings':     'Pengaturan Invoice',
 }
 
 export default function App() {
@@ -37,8 +43,8 @@ export default function App() {
   const [tab, setTab]               = useState('dashboard')
   const [refreshKey, setRefreshKey] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [submitMenuOpen, setSubmitMenuOpen] = useState(true)
-  const [mobileSubmitOpen, setMobileSubmitOpen] = useState(false)
+  const [openGroups, setOpenGroups] = useState({ submit: true, invoice: true })
+  const [mobileGroup, setMobileGroup] = useState(null) // key grup yang sheet-nya sedang terbuka di mobile
   const bump = useCallback(() => setRefreshKey((k) => k + 1), [])
 
   // ---- DARK MODE ----
@@ -123,11 +129,13 @@ export default function App() {
   // pengajuan lintas departemen di tahap itu juga saat membuka menu Approval.
   const isApprover = ['supervisor', 'manager', 'admin'].includes(profile.role)
   const isFinance  = isFinanceUser(profile)
+  const isInvoiceUser    = ['staff', 'manager'].includes(profile.invoice_role) || profile.role === 'admin'
+  const isInvoiceManager = profile.invoice_role === 'manager' || profile.role === 'admin'
 
   function navigate(key) {
     setTab(key)
     setSidebarOpen(false)
-    setMobileSubmitOpen(false)
+    setMobileGroup(null)
   }
 
   const navItems = [
@@ -146,6 +154,14 @@ export default function App() {
     // "Submit" karena ini murni laporan (bukan aksi submit/isi ulang).
     { key: 'cash-flow-report', label: 'Laporan Arus Kas', icon: Ico.cash,    show: isFinance },
     { key: 'signature', label: 'Tanda Tangan Saya',      icon: Ico.signature, show: true },
+    {
+      key: 'invoice', label: 'Invoice', icon: Ico.invoice, show: isInvoiceUser,
+      children: [
+        { key: 'invoice-list',     label: 'Daftar Invoice',     show: true },
+        { key: 'invoice-approval', label: 'Approval Invoice',   show: isInvoiceManager },
+        { key: 'invoice-settings', label: 'Pengaturan Invoice', show: true },
+      ].filter((c) => c.show),
+    },
     { key: 'admin',     label: 'Admin Panel',           icon: Ico.admin,     show: profile.role === 'admin', accent: true },
   ].filter((n) => n.show)
 
@@ -174,13 +190,13 @@ export default function App() {
                 <div key={n.key} className="nav-group">
                   <button
                     className={`nav-item nav-item-parent ${groupActive ? 'active' : ''}`}
-                    onClick={() => setSubmitMenuOpen((o) => !o)}
+                    onClick={() => setOpenGroups((o) => ({ ...o, [n.key]: !o[n.key] }))}
                   >
                     <span className="nav-icon">{n.icon}</span>
                     <span className="nav-label">{n.label}</span>
-                    <span className={`nav-chevron ${submitMenuOpen ? 'open' : ''}`}>&#9662;</span>
+                    <span className={`nav-chevron ${openGroups[n.key] ? 'open' : ''}`}>&#9662;</span>
                   </button>
-                  {submitMenuOpen && (
+                  {openGroups[n.key] && (
                     <div className="nav-submenu">
                       {n.children.map((c) => (
                         <button
@@ -240,7 +256,7 @@ export default function App() {
               <button
                 key={n.key}
                 className={`bottom-nav-item ${groupActive ? 'active' : ''}`}
-                onClick={() => setMobileSubmitOpen((o) => !o)}
+                onClick={() => setMobileGroup((k) => (k === n.key ? null : n.key))}
               >
                 <span className="bottom-nav-icon">{n.icon}</span>
                 <span className="bottom-nav-label">{n.label}</span>
@@ -261,11 +277,11 @@ export default function App() {
       </nav>
 
       {/* Sheet submenu mobile untuk grup "Submit" (dipicu dari bottom nav) */}
-      {mobileSubmitOpen && (
+      {mobileGroup && (
         <>
-          <div className="bottom-sheet-overlay" onClick={() => setMobileSubmitOpen(false)} />
+          <div className="bottom-sheet-overlay" onClick={() => setMobileGroup(null)} />
           <div className="bottom-sheet">
-            {navItems.find((n) => n.children)?.children.map((c) => (
+            {navItems.find((n) => n.key === mobileGroup)?.children.map((c) => (
               <button
                 key={c.key}
                 className={`bottom-sheet-item ${tab === c.key ? 'active' : ''}`}
@@ -320,6 +336,9 @@ export default function App() {
             {tab === 'cash-flow-report'       && isFinance  && <CashFlowReport profile={profile} refreshKey={refreshKey} />}
             {tab === 'admin'                  && profile.role === 'admin' && <AdminPanel />}
             {tab === 'signature' && <MyProfile profile={profile} onUpdated={loadProfile} />}
+            {tab === 'invoice-list'     && isInvoiceUser    && <InvoiceList profile={profile} />}
+            {tab === 'invoice-approval' && isInvoiceManager && <InvoiceApproval profile={profile} />}
+            {tab === 'invoice-settings' && isInvoiceUser    && <InvoiceSettings profile={profile} onProfileUpdated={loadProfile} />}
           </div>
         </div>
       </div>

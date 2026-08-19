@@ -1,0 +1,169 @@
+import React, { useState, useEffect, useCallback } from 'react'
+import { supabase } from '../../supabaseClient'
+import Icon from '../../icons.jsx'
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(r.result)
+    r.onerror = reject
+    r.readAsDataURL(file)
+  })
+}
+
+export default function InvoiceSettings({ profile, onProfileUpdated }) {
+  const isManager = profile.invoice_role === 'manager' || profile.role === 'admin'
+  const [tab, setTab] = useState('company')
+  const [company, setCompany] = useState({})
+  const [customers, setCustomers] = useState([])
+  const [numberFormat, setNumberFormat] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const [sigTitle, setSigTitle] = useState(profile.invoice_title || '')
+  const [sigImage, setSigImage] = useState(profile.invoice_signature || '')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await supabase.from('invoice_settings').select('*')
+    const map = Object.fromEntries((data || []).map((r) => [r.key, r.value]))
+    setCompany(map.company || {})
+    setCustomers(map.customers || [])
+    setNumberFormat(map.number_format || '{seq}/INV/FJI-FA/{roman}/{year}')
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function saveSetting(key, value) {
+    setSaving(true)
+    setMsg('')
+    const { error } = await supabase.from('invoice_settings').upsert({ key, value })
+    setSaving(false)
+    if (error) setMsg('Gagal menyimpan: ' + error.message)
+    else setMsg('Tersimpan.')
+  }
+
+  async function handleLogo(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const dataUrl = await fileToDataUrl(file)
+    setCompany((c) => ({ ...c, logo: dataUrl }))
+  }
+
+  function updateCustomer(i, field, value) {
+    setCustomers((cs) => cs.map((c, idx) => (idx === i ? { ...c, [field]: value } : c)))
+  }
+  function addCustomer() { setCustomers((cs) => [...cs, { name: '', address: '', currency: 'IDR', code: '' }]) }
+  function removeCustomer(i) { setCustomers((cs) => cs.filter((_, idx) => idx !== i)) }
+
+  async function handleSigImage(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const dataUrl = await fileToDataUrl(file)
+    setSigImage(dataUrl)
+  }
+
+  async function saveSignature() {
+    setSaving(true)
+    setMsg('')
+    const { error } = await supabase.from('profiles').update({ invoice_signature: sigImage || null, invoice_title: sigTitle || null }).eq('id', profile.id)
+    setSaving(false)
+    if (error) setMsg('Gagal menyimpan tanda tangan: ' + error.message)
+    else { setMsg('Tanda tangan tersimpan.'); onProfileUpdated?.() }
+  }
+
+  if (loading) return <div className="card"><div className="empty-state">Memuat...</div></div>
+
+  return (
+    <div className="card">
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        <button className={`btn btn-sm ${tab === 'company' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setTab('company')}>Data Perusahaan</button>
+        <button className={`btn btn-sm ${tab === 'customers' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setTab('customers')}>Daftar Customer</button>
+        <button className={`btn btn-sm ${tab === 'format' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setTab('format')}>Format Nomor</button>
+        {isManager && <button className={`btn btn-sm ${tab === 'signature' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setTab('signature')}>Tanda Tangan Saya</button>}
+      </div>
+
+      {msg && <div className="error-text" style={{ marginBottom: 10, color: msg.startsWith('Gagal') ? 'var(--danger)' : 'var(--success)' }}>{msg}</div>}
+
+      {tab === 'company' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxWidth: 700 }}>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label>Logo Perusahaan</label>
+            {company.logo && <div style={{ marginBottom: 6 }}><img src={company.logo} alt="logo" style={{ height: 60 }} /></div>}
+            <input type="file" accept="image/*" onChange={handleLogo} />
+          </div>
+          <div><label>Nama Perusahaan</label><input value={company.name || ''} onChange={(e) => setCompany({ ...company, name: e.target.value })} /></div>
+          <div><label>Subtitle</label><input value={company.subtitle || ''} onChange={(e) => setCompany({ ...company, subtitle: e.target.value })} /></div>
+          <div><label>Alamat baris 1</label><input value={company.address_line1 || ''} onChange={(e) => setCompany({ ...company, address_line1: e.target.value })} /></div>
+          <div><label>Alamat baris 2</label><input value={company.address_line2 || ''} onChange={(e) => setCompany({ ...company, address_line2: e.target.value })} /></div>
+          <div><label>Telp/Fax</label><input value={company.phone || ''} onChange={(e) => setCompany({ ...company, phone: e.target.value })} /></div>
+          <div><label>Nama Bank</label><input value={company.bank_name || ''} onChange={(e) => setCompany({ ...company, bank_name: e.target.value })} /></div>
+          <div><label>Cabang Bank</label><input value={company.bank_branch || ''} onChange={(e) => setCompany({ ...company, bank_branch: e.target.value })} /></div>
+          <div><label>Swift Code</label><input value={company.swift_code || ''} onChange={(e) => setCompany({ ...company, swift_code: e.target.value })} /></div>
+          <div><label>No. Rekening</label><input value={company.account_number || ''} onChange={(e) => setCompany({ ...company, account_number: e.target.value })} /></div>
+          <div><label>Nama Penandatangan (cadangan)</label><input value={company.signer_name || ''} onChange={(e) => setCompany({ ...company, signer_name: e.target.value })} /></div>
+          <div><label>Jabatan Penandatangan (cadangan)</label><input value={company.signer_title || ''} onChange={(e) => setCompany({ ...company, signer_title: e.target.value })} /></div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <button className="btn btn-primary" disabled={saving} onClick={() => saveSetting('company', company)}>{saving ? 'Menyimpan...' : 'Simpan Data Perusahaan'}</button>
+          </div>
+        </div>
+      )}
+
+      {tab === 'customers' && (
+        <div>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Nama Customer</th><th>Alamat</th><th style={{ width: 100 }}>Currency</th><th style={{ width: 90 }}>Kode</th><th></th></tr></thead>
+              <tbody>
+                {customers.map((c, i) => (
+                  <tr key={i}>
+                    <td><input value={c.name} onChange={(e) => updateCustomer(i, 'name', e.target.value)} /></td>
+                    <td><input value={c.address} onChange={(e) => updateCustomer(i, 'address', e.target.value)} /></td>
+                    <td>
+                      <select value={c.currency} onChange={(e) => updateCustomer(i, 'currency', e.target.value)}>
+                        <option value="IDR">IDR</option><option value="USD">USD</option><option value="JPY">JPY</option>
+                      </select>
+                    </td>
+                    <td><input value={c.code} onChange={(e) => updateCustomer(i, 'code', e.target.value)} /></td>
+                    <td><button className="btn btn-sm btn-danger" onClick={() => removeCustomer(i)}><Icon name="trash" size={11} /></button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button className="btn btn-sm btn-neutral" onClick={addCustomer}>+ Tambah Customer</button>
+            <button className="btn btn-primary btn-sm" disabled={saving} onClick={() => saveSetting('customers', customers)}>{saving ? 'Menyimpan...' : 'Simpan Daftar Customer'}</button>
+          </div>
+        </div>
+      )}
+
+      {tab === 'format' && (
+        <div style={{ maxWidth: 500 }}>
+          <label>Format Nomor Invoice</label>
+          <input value={numberFormat} onChange={(e) => setNumberFormat(e.target.value)} />
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+            Placeholder yang bisa dipakai: <code>{'{seq}'}</code> (nomor urut 3 digit), <code>{'{roman}'}</code> (angka romawi bulan), <code>{'{year}'}</code> (tahun).
+          </div>
+          <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={saving} onClick={() => saveSetting('number_format', numberFormat)}>{saving ? 'Menyimpan...' : 'Simpan Format'}</button>
+        </div>
+      )}
+
+      {tab === 'signature' && isManager && (
+        <div style={{ maxWidth: 420 }}>
+          <label>Jabatan</label>
+          <input value={sigTitle} onChange={(e) => setSigTitle(e.target.value)} placeholder="mis. Finance Manager" />
+          <label style={{ marginTop: 10 }}>Gambar Tanda Tangan</label>
+          {sigImage && <div style={{ margin: '6px 0' }}><img src={sigImage} alt="tanda tangan" style={{ height: 60, background: '#fff', padding: 4, borderRadius: 4 }} /></div>}
+          <input type="file" accept="image/*" onChange={handleSigImage} />
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+            Tanda tangan & jabatan ini otomatis muncul di invoice yang kamu approve lewat menu Approval.
+          </div>
+          <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={saving} onClick={saveSignature}>{saving ? 'Menyimpan...' : 'Simpan Tanda Tangan'}</button>
+        </div>
+      )}
+    </div>
+  )
+}

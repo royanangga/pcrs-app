@@ -5,6 +5,11 @@ import Icon from './icons.jsx'
 import Portal from './Portal.jsx'
 
 const ROLES = ['employee', 'supervisor', 'manager', 'admin']
+const INVOICE_ROLES = [
+  { value: '', label: 'Tidak ada akses' },
+  { value: 'staff', label: 'Staff Invoice' },
+  { value: 'manager', label: 'Manager Invoice' },
+]
 
 // Format angka mentah jadi berpemisah ribuan saat diketik (lihat App.jsx untuk
 // versi yang sama -- didup di sini karena tiap file punya helper lokal sendiri,
@@ -133,7 +138,7 @@ function AdminUsers() {
   const [editing, setEditing] = useState(null)
   const [editForm, setEditForm] = useState({})
   const [showCreate, setShowCreate] = useState(false)
-  const [createForm, setCreateForm] = useState({ full_name: '', email: '', password: '', department: '', role: 'employee' })
+  const [createForm, setCreateForm] = useState({ full_name: '', email: '', password: '', department: '', role: 'employee', invoice_role: '' })
   const [pwModal, setPwModal] = useState(null)  // { id, email }
   useEscapeToClose(() => setPwModal(null), !!pwModal)
   const [newPw, setNewPw] = useState('')
@@ -199,7 +204,7 @@ function AdminUsers() {
 
   function startEdit(u) {
     setEditing(u.id)
-    setEditForm({ full_name: u.full_name, department: u.department, role: u.role, email: u.email })
+    setEditForm({ full_name: u.full_name, department: u.department, role: u.role, email: u.email, invoice_role: u.invoice_role || '' })
     setMsg({ text: '', type: '' })
   }
 
@@ -224,6 +229,7 @@ function AdminUsers() {
       full_name: editForm.full_name,
       department: editForm.department,
       role: editForm.role,
+      invoice_role: editForm.invoice_role || null,
     }).eq('id', u.id)
 
     // Update email kalau berubah
@@ -244,13 +250,19 @@ function AdminUsers() {
     if (!session) return
     setLoading(true)
     setMsg({ text: '', type: '' })
-    const result = await callAdminOps(session, { action: 'create_user', ...createForm })
+    const { invoice_role, ...baseForm } = createForm
+    const result = await callAdminOps(session, { action: 'create_user', ...baseForm })
     if (result.error) {
       setMsg({ text: 'Gagal buat akun: ' + result.error, type: 'error' })
     } else {
+      // invoice_role bukan bagian dari user_metadata yang dibaca trigger handle_new_user,
+      // jadi diset lewat update terpisah setelah profil otomatis terbuat.
+      if (invoice_role) {
+        await supabase.from('profiles').update({ invoice_role }).eq('id', result.user_id)
+      }
       setMsg({ text: `Akun "${createForm.full_name}" berhasil dibuat.`, type: 'ok' })
       setShowCreate(false)
-      setCreateForm({ full_name: '', email: '', password: '', department: '', role: 'employee' })
+      setCreateForm({ full_name: '', email: '', password: '', department: '', role: 'employee', invoice_role: '' })
       load()
     }
     setLoading(false)
@@ -442,6 +454,12 @@ function AdminUsers() {
                 {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
+            <div>
+              <label>Akses Invoice</label>
+              <select value={createForm.invoice_role} onChange={(e) => setCreateForm({ ...createForm, invoice_role: e.target.value })}>
+                {INVOICE_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
           </div>
           <button className="btn btn-primary btn-sm" style={{ marginTop: 10 }} disabled={loading}>
             {loading ? 'Memproses...' : 'Buat Akun'}
@@ -473,7 +491,7 @@ function AdminUsers() {
             <th style={{ width: 32 }}>
               <input type="checkbox" checked={allOnPageSelected} onChange={toggleAllOnPage} />
             </th>
-            <th>Nama</th><th>Email</th><th>Department</th><th>Role</th><th>Status</th><th>Aksi</th>
+            <th>Nama</th><th>Email</th><th>Department</th><th>Role</th><th>Akses Invoice</th><th>Status</th><th>Aksi</th>
           </tr>
         </thead>
         <tbody>
@@ -490,6 +508,11 @@ function AdminUsers() {
                       {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                     </select>
                   </td>
+                  <td>
+                    <select value={editForm.invoice_role} onChange={(e) => setEditForm({ ...editForm, invoice_role: e.target.value })}>
+                      {INVOICE_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                    </select>
+                  </td>
                   <td>{(u.status || 'active') === 'resigned' ? 'Resign' : 'Aktif'}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="btn btn-success btn-sm" onClick={() => saveEdit(u)} disabled={loading}>Simpan</button>{' '}
@@ -502,6 +525,7 @@ function AdminUsers() {
                   <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{u.email}</td>
                   <td>{u.department}</td>
                   <td><span className="admin-role-badge">{u.role}</span></td>
+                  <td>{u.invoice_role ? <span className="admin-role-badge">{u.invoice_role}</span> : <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>}</td>
                   <td>
                     <span
                       className="admin-role-badge"
