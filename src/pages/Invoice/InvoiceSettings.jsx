@@ -11,8 +11,10 @@ function fileToDataUrl(file) {
   })
 }
 
-export default function InvoiceSettings({ profile, onProfileUpdated }) {
-  const isManager = profile.invoice_role === 'manager' || profile.role === 'admin'
+// Catatan: tanda tangan pribadi untuk approval invoice memakai `signature_url`
+// yang SAMA dengan tanda tangan slip reimbursement PCRS (diatur di menu
+// "Tanda Tangan Saya"), jadi tidak ada pengaturan tanda tangan terpisah di sini.
+export default function InvoiceSettings({ profile }) {
   const [tab, setTab] = useState('company')
   const [company, setCompany] = useState({})
   const [customers, setCustomers] = useState([])
@@ -20,9 +22,6 @@ export default function InvoiceSettings({ profile, onProfileUpdated }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
-
-  const [sigTitle, setSigTitle] = useState(profile.invoice_title || '')
-  const [sigImage, setSigImage] = useState(profile.invoice_signature || '')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -58,22 +57,6 @@ export default function InvoiceSettings({ profile, onProfileUpdated }) {
   function addCustomer() { setCustomers((cs) => [...cs, { name: '', address: '', currency: 'IDR', code: '' }]) }
   function removeCustomer(i) { setCustomers((cs) => cs.filter((_, idx) => idx !== i)) }
 
-  async function handleSigImage(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const dataUrl = await fileToDataUrl(file)
-    setSigImage(dataUrl)
-  }
-
-  async function saveSignature() {
-    setSaving(true)
-    setMsg('')
-    const { error } = await supabase.from('profiles').update({ invoice_signature: sigImage || null, invoice_title: sigTitle || null }).eq('id', profile.id)
-    setSaving(false)
-    if (error) setMsg('Gagal menyimpan tanda tangan: ' + error.message)
-    else { setMsg('Tanda tangan tersimpan.'); onProfileUpdated?.() }
-  }
-
   if (loading) return <div className="card"><div className="empty-state">Memuat...</div></div>
 
   return (
@@ -82,7 +65,6 @@ export default function InvoiceSettings({ profile, onProfileUpdated }) {
         <button className={`btn btn-sm ${tab === 'company' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setTab('company')}>Data Perusahaan</button>
         <button className={`btn btn-sm ${tab === 'customers' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setTab('customers')}>Daftar Customer</button>
         <button className={`btn btn-sm ${tab === 'format' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setTab('format')}>Format Nomor</button>
-        {isManager && <button className={`btn btn-sm ${tab === 'signature' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setTab('signature')}>Tanda Tangan Saya</button>}
       </div>
 
       {msg && <div className="error-text" style={{ marginBottom: 10, color: msg.startsWith('Gagal') ? 'var(--danger)' : 'var(--success)' }}>{msg}</div>}
@@ -105,6 +87,10 @@ export default function InvoiceSettings({ profile, onProfileUpdated }) {
           <div><label>No. Rekening</label><input value={company.account_number || ''} onChange={(e) => setCompany({ ...company, account_number: e.target.value })} /></div>
           <div><label>Nama Penandatangan (cadangan)</label><input value={company.signer_name || ''} onChange={(e) => setCompany({ ...company, signer_name: e.target.value })} /></div>
           <div><label>Jabatan Penandatangan (cadangan)</label><input value={company.signer_title || ''} onChange={(e) => setCompany({ ...company, signer_title: e.target.value })} /></div>
+          <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--text-muted)' }}>
+            "Penandatangan (cadangan)" ini hanya dipakai kalau invoice sudah disetujui tapi manager yang meng-approve
+            belum mengisi tanda tangan/jabatan di menu <strong>Tanda Tangan Saya</strong>.
+          </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <button className="btn btn-primary" disabled={saving} onClick={() => saveSetting('company', company)}>{saving ? 'Menyimpan...' : 'Simpan Data Perusahaan'}</button>
           </div>
@@ -148,20 +134,6 @@ export default function InvoiceSettings({ profile, onProfileUpdated }) {
             Placeholder yang bisa dipakai: <code>{'{seq}'}</code> (nomor urut 3 digit), <code>{'{roman}'}</code> (angka romawi bulan), <code>{'{year}'}</code> (tahun).
           </div>
           <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={saving} onClick={() => saveSetting('number_format', numberFormat)}>{saving ? 'Menyimpan...' : 'Simpan Format'}</button>
-        </div>
-      )}
-
-      {tab === 'signature' && isManager && (
-        <div style={{ maxWidth: 420 }}>
-          <label>Jabatan</label>
-          <input value={sigTitle} onChange={(e) => setSigTitle(e.target.value)} placeholder="mis. Finance Manager" />
-          <label style={{ marginTop: 10 }}>Gambar Tanda Tangan</label>
-          {sigImage && <div style={{ margin: '6px 0' }}><img src={sigImage} alt="tanda tangan" style={{ height: 60, background: '#fff', padding: 4, borderRadius: 4 }} /></div>}
-          <input type="file" accept="image/*" onChange={handleSigImage} />
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
-            Tanda tangan & jabatan ini otomatis muncul di invoice yang kamu approve lewat menu Approval.
-          </div>
-          <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={saving} onClick={saveSignature}>{saving ? 'Menyimpan...' : 'Simpan Tanda Tangan'}</button>
         </div>
       )}
     </div>

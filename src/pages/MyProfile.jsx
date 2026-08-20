@@ -4,6 +4,7 @@ import Icon from '../icons.jsx'
 
 // ---------------------------------------------------------------- TANDA TANGAN SAYA ----
 export default function MyProfile({ profile, onUpdated }) {
+  const isInvoiceManager = profile.invoice_role === 'manager' || profile.role === 'admin'
   const canvasRef = useRef(null)
   const drawing = useRef(false)
   const hasStroke = useRef(false)
@@ -12,6 +13,8 @@ export default function MyProfile({ profile, onUpdated }) {
   const [signatureUrl, setSignatureUrl] = useState(profile.signature_url || null)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState({ text: '', type: '' })
+  const [invoiceTitle, setInvoiceTitle] = useState(profile.invoice_title || '')
+  const [savingTitle, setSavingTitle] = useState(false)
 
   useEffect(() => { setSignatureUrl(profile.signature_url || null) }, [profile.signature_url])
 
@@ -125,12 +128,21 @@ export default function MyProfile({ profile, onUpdated }) {
     setSaving(false)
   }
 
+  async function saveInvoiceTitle() {
+    setSavingTitle(true)
+    setMsg({ text: '', type: '' })
+    const { error } = await supabase.from('profiles').update({ invoice_title: invoiceTitle || null }).eq('id', profile.id)
+    setSavingTitle(false)
+    if (error) setMsg({ text: 'Gagal menyimpan jabatan: ' + error.message, type: 'error' })
+    else { setMsg({ text: 'Jabatan tersimpan.', type: 'success' }); onUpdated && onUpdated() }
+  }
+
   return (
     <div>
       <div className="card" style={{ maxWidth: 640 }}>
         <h3>Tanda Tangan Digital</h3>
         <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: -6, marginBottom: 14 }}>
-          Gambar atau unggah tanda tangan Anda sekali di sini. Setiap kali slip reimbursement dicetak
+          Gambar atau unggah tanda tangan Anda sekali di sini. Setiap kali slip reimbursement{isInvoiceManager ? ' atau invoice' : ''} dicetak
           (baik sebagai pemohon maupun approver), tanda tangan ini akan otomatis muncul di kolom tanda tangan Anda.
         </p>
 
@@ -182,6 +194,27 @@ export default function MyProfile({ profile, onUpdated }) {
           <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
         </div>
       </div>
+
+      {isInvoiceManager && (
+        <div className="card" style={{ maxWidth: 640, marginTop: 16 }}>
+          <h3>Jabatan (untuk Invoice)</h3>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: -6, marginBottom: 14 }}>
+            Jabatan ini muncul di bawah tanda tangan Anda saat invoice yang Anda approve dicetak. Tanda tangannya
+            memakai gambar yang sama seperti di atas.
+          </p>
+          <input
+            value={invoiceTitle}
+            onChange={(e) => setInvoiceTitle(e.target.value)}
+            placeholder="mis. Finance Manager"
+            style={{ maxWidth: 320 }}
+          />
+          <div style={{ marginTop: 12 }}>
+            <button className="btn btn-primary" disabled={savingTitle} onClick={saveInvoiceTitle}>
+              {savingTitle ? 'Menyimpan...' : 'Simpan Jabatan'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -14,7 +14,6 @@ import Dashboard from './pages/Dashboard.jsx'
 import SubmitForm from './pages/SubmitForm.jsx'
 import MyRequests from './pages/MyRequests.jsx'
 import InvoiceList from './pages/Invoice/InvoiceList.jsx'
-import InvoiceApproval from './pages/Invoice/InvoiceApproval.jsx'
 import InvoiceSettings from './pages/Invoice/InvoiceSettings.jsx'
 import { isFinanceUser } from './lib/helpers.js'
 
@@ -33,7 +32,6 @@ const PAGE_TITLE = {
   admin:                  'Admin Panel',
   signature:              'Tanda Tangan Saya',
   'invoice-list':         'Daftar Invoice',
-  'invoice-approval':     'Approval Invoice',
   'invoice-settings':     'Pengaturan Invoice',
 }
 
@@ -148,7 +146,7 @@ export default function App() {
       ].filter((c) => c.show),
     },
     { key: 'mine',      label: 'Pengajuan Saya',        icon: Ico.mine,      show: true },
-    { key: 'approval',  label: 'Approval',              icon: Ico.approval,  show: isApprover },
+    { key: 'approval',  label: 'Approval',              icon: Ico.approval,  show: isApprover || isInvoiceManager },
     { key: 'finance',   label: 'Finance Verification',  icon: Ico.finance,   show: isFinance },
     // Menu terpisah, khusus department Finance — bukan bagian dari submenu
     // "Submit" karena ini murni laporan (bukan aksi submit/isi ulang).
@@ -158,7 +156,6 @@ export default function App() {
       key: 'invoice', label: 'Invoice', icon: Ico.invoice, show: isInvoiceUser,
       children: [
         { key: 'invoice-list',     label: 'Daftar Invoice',     show: true },
-        { key: 'invoice-approval', label: 'Approval Invoice',   show: isInvoiceManager },
         { key: 'invoice-settings', label: 'Pengaturan Invoice', show: true },
       ].filter((c) => c.show),
     },
@@ -331,14 +328,13 @@ export default function App() {
             {tab === 'submit-reimbursement'   && <SubmitForm profile={profile} onSubmitted={bump} />}
             {tab === 'submit-kas'             && isFinance  && <CashBalance profile={profile} refreshKey={refreshKey} onActed={bump} />}
             {tab === 'mine'                   && <MyRequests profile={profile} refreshKey={refreshKey} onRefresh={bump} />}
-            {tab === 'approval'               && isApprover && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
+            {tab === 'approval'               && (isApprover || isInvoiceManager) && <ApprovalQueue profile={profile} refreshKey={refreshKey} onActed={bump} />}
             {tab === 'finance'                && isFinance  && <FinanceVerification profile={profile} refreshKey={refreshKey} onActed={bump} />}
             {tab === 'cash-flow-report'       && isFinance  && <CashFlowReport profile={profile} refreshKey={refreshKey} />}
             {tab === 'admin'                  && profile.role === 'admin' && <AdminPanel />}
             {tab === 'signature' && <MyProfile profile={profile} onUpdated={loadProfile} />}
             {tab === 'invoice-list'     && isInvoiceUser    && <InvoiceList profile={profile} />}
-            {tab === 'invoice-approval' && isInvoiceManager && <InvoiceApproval profile={profile} />}
-            {tab === 'invoice-settings' && isInvoiceUser    && <InvoiceSettings profile={profile} onProfileUpdated={loadProfile} />}
+            {tab === 'invoice-settings' && isInvoiceUser    && <InvoiceSettings profile={profile} />}
           </div>
         </div>
       </div>

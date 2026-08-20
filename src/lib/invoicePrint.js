@@ -63,7 +63,8 @@ function esc(s) {
   return String(s ?? '').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-// approver: { full_name, invoice_signature, invoice_title } (profil manager yang approve)
+// approver: { full_name, signature_url, invoice_title } (profil manager yang approve —
+// signature_url adalah tanda tangan yang SAMA dipakai untuk slip reimbursement PCRS)
 function buildInvoiceBody(inv, co, approver) {
   const items = inv.items || []
   const total = items.reduce((s, it) => s + Number(it.amount || 0) * Number(it.qty || 1), 0)
@@ -151,7 +152,7 @@ function buildInvoiceBody(inv, co, approver) {
         <div class="sig-block">
           <div class="sig-issuer">${esc(co.name)}</div>
           ${approved ? `
-          <div class="sig-img-wrap">${approver?.invoice_signature ? `<img src="${approver.invoice_signature}">` : ''}</div>
+          <div class="sig-img-wrap">${approver?.signature_url ? `<img src="${approver.signature_url}">` : ''}</div>
           <div class="sig-name">${esc(approver?.full_name || co.signer_name || '')}</div>
           <div class="sig-title">${esc(approver?.invoice_title || co.signer_title || '')}</div>` : `
           <div class="sig-img-wrap" style="height:59px;font-size:9pt;color:#999;font-family:Arial,sans-serif;">( ${isDraft ? 'Draft — belum diajukan' : 'Menunggu persetujuan Manager'} )</div>

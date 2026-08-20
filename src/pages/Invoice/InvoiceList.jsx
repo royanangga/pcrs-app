@@ -191,7 +191,7 @@ export default function InvoiceList({ profile }) {
   async function doPrint(r) {
     let approver = null
     if (r.approval_status === 'approved' && r.approved_by) {
-      const { data } = await supabase.from('profiles').select('full_name, invoice_signature, invoice_title').eq('id', r.approved_by).single()
+      const { data } = await supabase.from('profiles').select('full_name, signature_url, invoice_title').eq('id', r.approved_by).single()
       approver = data
     }
     printInvoice(r, company, approver)
@@ -203,7 +203,7 @@ export default function InvoiceList({ profile }) {
     const approverIds = [...new Set(chosen.filter((r) => r.approval_status === 'approved' && r.approved_by).map((r) => r.approved_by))]
     let approverMap = {}
     if (approverIds.length) {
-      const { data } = await supabase.from('profiles').select('id, full_name, invoice_signature, invoice_title').in('id', approverIds)
+      const { data } = await supabase.from('profiles').select('id, full_name, signature_url, invoice_title').in('id', approverIds)
       approverMap = Object.fromEntries((data || []).map((p) => [p.id, p]))
     }
     printInvoiceBatch(chosen.map((inv) => ({ inv, approver: approverMap[inv.approved_by] || null })), company)

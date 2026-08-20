@@ -94,10 +94,13 @@ insert into invoice_settings (key, value) values
 }'::jsonb)
 on conflict (key) do nothing;
 
--- 4) Kolom tanda tangan pribadi manager invoice (dipasang di profiles,
---    bukan tabel users terpisah seperti di aplikasi invoice lama).
-alter table profiles add column if not exists invoice_signature text; -- base64 data URL
-alter table profiles add column if not exists invoice_title text;    -- jabatan yang muncul di ttd
+-- 4) Jabatan yang muncul di kolom tanda tangan invoice (hanya dipakai kalau
+--    approver adalah Manager Invoice). Tanda tangan GAMBAR-nya sendiri
+--    memakai `signature_url` yang SUDAH ADA di tabel profiles (dipakai
+--    bersama dengan fitur cetak slip reimbursement PCRS) — supaya user
+--    cukup upload 1 tanda tangan saja untuk kedua fitur.
+alter table profiles add column if not exists invoice_title text;    -- jabatan yang muncul di ttd invoice
+alter table profiles drop column if exists invoice_signature;        -- (versi lama, sudah digantikan signature_url)
 
 -- 5) Update fungsi admin_get_users supaya ikut mengembalikan invoice_role,
 --    supaya Admin Panel bisa menampilkan & mengatur akses invoice per user.

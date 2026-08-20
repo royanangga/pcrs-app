@@ -6,7 +6,19 @@ web invoice terpisah). Satu login, satu deploy, satu database.
 ## Apa yang berubah?
 
 - Menu baru **"Invoice"** muncul di sidebar (untuk user yang punya akses),
-  dengan submenu: **Daftar Invoice**, **Approval Invoice**, **Pengaturan Invoice**.
+  dengan submenu: **Daftar Invoice** dan **Pengaturan Invoice**.
+- **Approval jadi satu menu.** Menu **"Approval"** yang sudah ada di PCRS
+  sekarang juga dipakai untuk approval invoice. Kalau seorang user cuma
+  approver reimbursement, tampilannya sama seperti biasa. Kalau user itu
+  Manager Invoice, dia langsung lihat antrian invoice di menu yang sama.
+  Kalau user itu approver reimbursement **sekaligus** Manager Invoice,
+  muncul 2 tab kecil ("Reimbursement" / "Invoice") di dalam 1 menu Approval
+  itu untuk pindah antar antrian — tidak ada lagi menu approval terpisah.
+- **Tanda tangan jadi satu.** Menu **"Tanda Tangan Saya"** yang sudah ada di
+  PCRS sekarang dipakai bersama untuk slip reimbursement DAN invoice — user
+  cukup upload/gambar 1 tanda tangan saja. Khusus Manager Invoice, di
+  halaman yang sama ada tambahan field **"Jabatan (untuk Invoice)"** (mis.
+  "Finance Manager") yang muncul di bawah tanda tangan saat invoice dicetak.
 - Login tetap pakai akun PCRS yang sudah ada (Supabase Auth) — tidak ada
   login terpisah lagi untuk invoice.
 - Semua tabel invoice (`invoices`, `invoice_items`, dst) dipindah ke project
@@ -53,12 +65,20 @@ disimpan.
 **Beda Staff vs Manager (khusus fitur invoice):**
 - Staff & Manager sama-sama bisa membuat, edit, cetak, hapus invoice
   (selama belum di-approve) dan mengubah Pengaturan Invoice.
-- Cuma **Manager Invoice** yang bisa buka menu Approval Invoice
-  (approve / batalkan approval) dan upload tanda tangan pribadi.
+- Cuma **Manager Invoice** yang bisa melihat antrian approval invoice
+  (approve / batalkan approval) di menu Approval, dan mengisi jabatan
+  invoice di menu Tanda Tangan Saya.
 - Admin PCRS otomatis punya akses penuh ke fitur invoice (staff + manager)
   tanpa perlu diset manual.
 
-### 4. (Opsional) Pindahkan data invoice lama
+### 4. Kalau kamu Manager Invoice: lengkapi tanda tangan
+
+Buka menu **Tanda Tangan Saya** → pastikan tanda tangan sudah ada (kalau
+sebelumnya sudah punya tanda tangan untuk reimbursement, tidak perlu upload
+ulang, otomatis kepakai) → isi juga field **"Jabatan (untuk Invoice)"**
+yang muncul khusus untuk Manager Invoice di halaman yang sama.
+
+### 5. (Opsional) Pindahkan data invoice lama
 
 Kalau kamu masih punya data invoice lama yang mau dibawa, lihat catatan
 di bagian bawah file `supabase-merge-invoice.sql` (export CSV dari project
@@ -72,12 +92,25 @@ supabase-merge-invoice.sql          → BARU, migrasi database (jalankan sekali)
 src/lib/invoiceHelpers.js           → BARU, logic nomor invoice & format angka
 src/lib/invoicePrint.js             → BARU, template cetak/PDF invoice
 src/pages/Invoice/InvoiceList.jsx   → BARU, halaman Daftar Invoice
-src/pages/Invoice/InvoiceApproval.jsx → BARU, halaman Approval (manager)
+src/pages/Invoice/InvoiceApproval.jsx → BARU, antrian approval invoice (dipakai
+                                          DI DALAM menu Approval, bukan menu sendiri)
 src/pages/Invoice/InvoiceSettings.jsx → BARU, halaman Pengaturan Invoice
-src/App.jsx        → diubah: tambah menu Invoice, dropdown sidebar multi-grup
+src/App.jsx           → diubah: tambah menu Invoice, dropdown sidebar multi-grup,
+                          menu Approval sekarang juga untuk Manager Invoice
+src/pages/ApprovalQueue.jsx → diubah: gabung antrian reimbursement + invoice
+                                jadi 1 menu (dengan tab kalau user punya akses keduanya)
+src/pages/MyProfile.jsx     → diubah: tambah field "Jabatan (untuk Invoice)"
+                                untuk Manager Invoice, tanda tangan dipakai bersama
 src/icons.jsx       → diubah: tambah ikon invoice
 src/AdminPanel.jsx  → diubah: tambah kolom "Akses Invoice" di Kelola User
 ```
 
-Semua file PCRS lainnya (Dashboard, Approval reimbursement, Cash Balance,
-dst) **tidak disentuh sama sekali**.
+Kalau sebelumnya kamu sudah sempat menjalankan versi SQL sebelum update ini
+(yang membuat kolom `invoice_signature` & tabel tanda tangan terpisah),
+jalankan lagi `supabase-merge-invoice.sql` yang baru — aman dijalankan
+ulang, dan akan otomatis menghapus kolom `invoice_signature` yang lama
+(datanya tidak dipakai lagi karena sekarang pakai `signature_url` yang
+sama dengan reimbursement).
+
+Semua file PCRS lainnya (Dashboard, Cash Balance, dst) **tidak disentuh
+sama sekali**.

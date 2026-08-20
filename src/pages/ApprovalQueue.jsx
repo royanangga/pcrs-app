@@ -8,8 +8,10 @@ import SimpleAlertModal from '../components/SimpleAlertModal.jsx'
 import { APPROVER_ROLE_LABEL } from '../lib/constants.js'
 import { rupiah, isFinanceManager, nextApprovalRole, updateWithGuard } from '../lib/helpers.js'
 
-// ---------------------------------------------------------------- APPROVAL QUEUE ----
-export default function ApprovalQueue({ profile, refreshKey, onActed }) {
+import InvoiceApproval from './Invoice/InvoiceApproval.jsx'
+
+// ---------------------------------------------------------------- APPROVAL QUEUE (REIMBURSEMENT) ----
+function ReimbursementApprovalQueue({ profile, refreshKey, onActed }) {
   const [rows, setRows] = useState([])
   const [empProfiles, setEmpProfiles] = useState({}) // id -> { full_name, department }
   const [noteDraft, setNoteDraft] = useState({})
@@ -475,4 +477,32 @@ export default function ApprovalQueue({ profile, refreshKey, onActed }) {
       {alertMsg && <SimpleAlertModal text={alertMsg} onClose={() => setAlertMsg('')} />}
     </>
   )
+}
+
+// ---------------------------------------------------------------- APPROVAL QUEUE (GABUNGAN) ----
+// Satu menu "Approval" untuk semua: kalau user hanya approver reimbursement,
+// tampil seperti biasa. Kalau user hanya Manager Invoice, langsung tampil
+// antrian invoice. Kalau user punya AKSES KEDUANYA (mis. Manager Departemen
+// yang juga Manager Invoice), muncul tab kecil untuk pindah antar antrian.
+export default function ApprovalQueue({ profile, refreshKey, onActed }) {
+  const isReimbApprover = ['supervisor', 'manager', 'admin'].includes(profile.role)
+  const isInvoiceManager = profile.invoice_role === 'manager' || profile.role === 'admin'
+  const [section, setSection] = useState('reimb')
+
+  if (isReimbApprover && isInvoiceManager) {
+    return (
+      <>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <button className={`btn btn-sm ${section === 'reimb' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setSection('reimb')}>Reimbursement</button>
+          <button className={`btn btn-sm ${section === 'invoice' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setSection('invoice')}>Invoice</button>
+        </div>
+        {section === 'reimb'
+          ? <ReimbursementApprovalQueue profile={profile} refreshKey={refreshKey} onActed={onActed} />
+          : <InvoiceApproval profile={profile} />}
+      </>
+    )
+  }
+
+  if (isInvoiceManager) return <InvoiceApproval profile={profile} />
+  return <ReimbursementApprovalQueue profile={profile} refreshKey={refreshKey} onActed={onActed} />
 }
