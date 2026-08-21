@@ -276,9 +276,19 @@ export default function InvoiceForm({ profile, customers, numberFormat, exchange
       <h4 style={{ marginTop: 16, marginBottom: 6 }}>Item</h4>
       <div className="table-scroll">
         <table>
-          <thead><tr><th>Nama Item</th><th>Deskripsi</th><th style={{ width: 90 }}>Qty</th><th style={{ width: 140 }}>Nominal (per unit, IDR)</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th>Nama Item</th><th>Deskripsi</th><th style={{ width: 90 }}>Qty</th>
+              <th style={{ width: 140 }}>Nominal (per unit, IDR)</th>
+              {form.currency !== 'IDR' && <th style={{ width: 130 }}>≈ {form.currency}</th>}
+              <th></th>
+            </tr>
+          </thead>
           <tbody>
-            {form.items.map((it, i) => (
+            {form.items.map((it, i) => {
+              const lineIdr = Number(stripThousands(it.amount) || 0) * Number(it.qty || 1)
+              const rate = Number(form.exchange_rate)
+              return (
               <tr key={i}>
                 <td><input value={it.item_name} onChange={(e) => updateItem(i, 'item_name', e.target.value)} /></td>
                 <td><input value={it.description} onChange={(e) => updateItem(i, 'description', e.target.value)} /></td>
@@ -289,9 +299,15 @@ export default function InvoiceForm({ profile, customers, numberFormat, exchange
                     onChange={(e) => updateItem(i, 'amount', stripThousands(e.target.value))}
                   />
                 </td>
+                {form.currency !== 'IDR' && (
+                  <td style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                    {rate ? numFmtValuta(lineIdr / rate, form.currency) : '-'}
+                  </td>
+                )}
                 <td>{form.items.length > 1 && <button type="button" className="btn btn-sm btn-danger" onClick={() => removeItem(i)}><Icon name="trash" size={11} /></button>}</td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>
