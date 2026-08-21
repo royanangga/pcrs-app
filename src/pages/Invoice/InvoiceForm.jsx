@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { supabase } from '../../supabaseClient'
 import { formatThousands, stripThousands } from '../../lib/helpers.js'
-import { nextInvoiceNumber, numFmt, numFmtValuta, invoiceTotal } from '../../lib/invoiceHelpers.js'
+import { nextInvoiceNumber, dueDateOneMonthEnd, numFmt, numFmtValuta, invoiceTotal } from '../../lib/invoiceHelpers.js'
 import Icon from '../../icons.jsx'
 
 const emptyItem = () => ({ item_name: '', description: '', qty: '1', amount: '' })
@@ -47,14 +47,56 @@ export default function InvoiceForm({ profile, customers, numberFormat, invoice,
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
 
+  // Due date otomatis cuma jalan selama user belum pernah ketik manual di
+  // field Due Date-nya sendiri (supaya tidak menimpa isian yang sudah
+  // disesuaikan tangan). Default aktif kalau due_date awal masih kosong.
+  const [dueDateAuto, setDueDateAuto] = useState(() => !buildInitialForm(invoice).due_date)
+
+  // Preview nomor invoice: cuma dihitung kalau invoice ini belum punya
+  // nomor resmi (draft baru / draft lama yang belum diajukan). Nomor asli
+  // tetap ditentukan ulang saat tombol "Simpan & Ajukan" ditekan (lihat
+  // save()), jadi preview ini murni informasi, bisa berubah kalau ada
+  // invoice lain yang diajukan lebih dulu.
+  const fixedInvoiceNo = invoice?.invoice_no || null
+  const [invoiceNoPreview, setInvoiceNoPreview] = useState('')
+  const [loadingPreview, setLoadingPreview] = useState(!fixedInvoiceNo)
+
+  useEffect(() => {
+    if (fixedInvoiceNo) return
+    let cancelled = false
+    setLoadingPreview(true)
+    supabase.from('invoice_invoices').select('invoice_no').not('invoice_no', 'is', null).then(({ data }) => {
+      if (cancelled) return
+      const preview = nextInvoiceNumber((data || []).map((r) => r.invoice_no), form.invoice_date, numberFormat)
+      setInvoiceNoPreview(preview)
+      setLoadingPreview(false)
+    })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.invoice_date, numberFormat, fixedInvoiceNo])
+
   function pickCustomer(name) {
     const c = customers.find((x) => x.name === name)
     setForm((f) => ({
       ...f,
       customer_name: name,
       customer_address: c?.address || f.customer_address,
+      attn: c?.attn || f.attn,
       currency: c?.currency || f.currency,
     }))
+  }
+
+  function handleInvoiceDateChange(value) {
+    setForm((f) => ({
+      ...f,
+      invoice_date: value,
+      due_date: dueDateAuto ? dueDateOneMonthEnd(value) : f.due_date,
+    }))
+  }
+
+  function handleDueDateChange(value) {
+    setDueDateAuto(false)
+    setForm((f) => ({ ...f, due_date: value }))
   }
 
   function updateItem(i, field, value) {
@@ -125,6 +167,7 @@ export default function InvoiceForm({ profile, customers, numberFormat, invoice,
         // Invoice baru: reset form supaya siap dipakai isi invoice berikutnya
         // (pola yang sama dengan Submit Reimbursement).
         setForm(buildInitialForm(null))
+        setDueDateAuto(true)
         setMsg(`✓ Invoice ${asStatus === 'Draft' ? 'tersimpan sebagai Draft' : 'berhasil diajukan'}. Lihat & lanjutkan di menu "Pengajuan Saya" → tab "Pengajuan Invoice".`)
       }
       onSaved && onSaved(invoiceId, asStatus)
@@ -162,12 +205,26 @@ export default function InvoiceForm({ profile, customers, numberFormat, invoice,
           <input value={form.batch} onChange={(e) => setForm({ ...form, batch: e.target.value })} />
         </div>
         <div>
-          <label>Tanggal Invoice</label>
-          <input type="date" value={form.invoice_date} onChange={(e) => setForm({ ...form, invoice_date: e.target.value })} />
+          <label>Nomor Invoice</label>
+          <input
+            value={fixedInvoiceNo || (loadingPreview ? 'Menghitung...' : invoiceNoPreview)}
+            readOnly
+            disabled
+            style={{ color: 'var(--text-muted)', background: 'var(--bg-subtle, #f5f5f5)' }}
+          />
+          {!fixedInvoiceNo && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+              Perkiraan — nomor pasti ditentukan saat invoice diajukan (bisa berubah kalau ada invoice lain yang diajukan lebih dulu).
+            </div>
+          )}
         </div>
         <div>
-          <label>Due Date</label>
-          <input type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />
+          <label>Tanggal Invoice</label>
+          <input type="date" value={form.invoice_date} onChange={(e) => handleInvoiceDateChange(e.target.value)} />
+        </div>
+        <div>
+          <label>Due Date{dueDateAuto ? ' (otomatis)' : ''}</label>
+          <input type="date" value={form.due_date} onChange={(e) => handleDueDateChange(e.target.value)} />
         </div>
         <div>
           <label>Mata Uang</label>

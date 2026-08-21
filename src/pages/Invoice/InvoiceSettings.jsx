@@ -54,7 +54,7 @@ export default function InvoiceSettings({ profile }) {
   function updateCustomer(i, field, value) {
     setCustomers((cs) => cs.map((c, idx) => (idx === i ? { ...c, [field]: value } : c)))
   }
-  function addCustomer() { setCustomers((cs) => [...cs, { name: '', address: '', currency: 'IDR', code: '' }]) }
+  function addCustomer() { setCustomers((cs) => [...cs, { name: '', address: '', attn: '', currency: 'IDR', code: '' }]) }
   function removeCustomer(i) { setCustomers((cs) => cs.filter((_, idx) => idx !== i)) }
 
   if (loading) return <div className="card"><div className="empty-state">Memuat...</div></div>
@@ -101,12 +101,13 @@ export default function InvoiceSettings({ profile }) {
         <div>
           <div className="table-scroll">
             <table>
-              <thead><tr><th>Nama Customer</th><th>Alamat</th><th style={{ width: 100 }}>Currency</th><th style={{ width: 90 }}>Kode</th><th></th></tr></thead>
+              <thead><tr><th>Nama Customer</th><th>Alamat</th><th>ATTN</th><th style={{ width: 100 }}>Currency</th><th style={{ width: 90 }}>Kode</th><th></th></tr></thead>
               <tbody>
                 {customers.map((c, i) => (
                   <tr key={i}>
                     <td><input value={c.name} onChange={(e) => updateCustomer(i, 'name', e.target.value)} /></td>
                     <td><input value={c.address} onChange={(e) => updateCustomer(i, 'address', e.target.value)} /></td>
+                    <td><input value={c.attn || ''} onChange={(e) => updateCustomer(i, 'attn', e.target.value)} placeholder="mis. Bpk/Ibu ..." /></td>
                     <td>
                       <select value={c.currency} onChange={(e) => updateCustomer(i, 'currency', e.target.value)}>
                         <option value="IDR">IDR</option><option value="USD">USD</option><option value="JPY">JPY</option>

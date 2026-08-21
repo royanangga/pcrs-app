@@ -41,3 +41,14 @@ export function numFmtValuta(n, currency) {
 export function invoiceTotal(items) {
   return (items || []).reduce((s, it) => s + Number(it.amount || 0) * Number(it.qty || 1), 0)
 }
+
+// Due date otomatis = akhir bulan, 1 bulan ke depan dari tanggal invoice.
+// Contoh: invoice tanggal 21 Agustus 2026 -> due date 30 September 2026.
+export function dueDateOneMonthEnd(invoiceDateStr) {
+  if (!invoiceDateStr) return ''
+  const d = new Date(invoiceDateStr + 'T00:00:00')
+  if (Number.isNaN(d.getTime())) return ''
+  // new Date(year, month+2, 0) = tanggal terakhir dari (bulan invoice + 1)
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 2, 0)
+  return lastDay.toISOString().slice(0, 10)
+}
