@@ -13,7 +13,7 @@ import ApprovalQueue from './pages/ApprovalQueue.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import SubmitForm from './pages/SubmitForm.jsx'
 import MyRequests from './pages/MyRequests.jsx'
-import InvoiceList from './pages/Invoice/InvoiceList.jsx'
+import InvoiceSubmit from './pages/Invoice/InvoiceSubmit.jsx'
 import InvoiceSettings from './pages/Invoice/InvoiceSettings.jsx'
 import { isFinanceUser } from './lib/helpers.js'
 
@@ -31,7 +31,7 @@ const PAGE_TITLE = {
   'cash-flow-report':     'Laporan Arus Kas',
   admin:                  'Admin Panel',
   signature:              'Tanda Tangan Saya',
-  'invoice-list':         'Daftar Invoice',
+  'submit-invoice':       'Submit Invoice',
   'invoice-settings':     'Pengaturan Invoice',
 }
 
@@ -41,7 +41,7 @@ export default function App() {
   const [tab, setTab]               = useState('dashboard')
   const [refreshKey, setRefreshKey] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [openGroups, setOpenGroups] = useState({ submit: true, invoice: true })
+  const [openGroups, setOpenGroups] = useState({ submit: true, database: true })
   const [mobileGroup, setMobileGroup] = useState(null) // key grup yang sheet-nya sedang terbuka di mobile
   const bump = useCallback(() => setRefreshKey((k) => k + 1), [])
 
@@ -142,6 +142,7 @@ export default function App() {
       key: 'submit', label: 'Submit', icon: Ico.submit, show: true,
       children: [
         { key: 'submit-reimbursement', label: 'Submit Reimbursement', show: true },
+        { key: 'submit-invoice',       label: 'Submit Invoice',       show: isInvoiceUser },
         { key: 'submit-kas',           label: 'Submit Kas',           show: isFinance },
       ].filter((c) => c.show),
     },
@@ -151,12 +152,11 @@ export default function App() {
     // Menu terpisah, khusus department Finance — bukan bagian dari submenu
     // "Submit" karena ini murni laporan (bukan aksi submit/isi ulang).
     { key: 'cash-flow-report', label: 'Laporan Arus Kas', icon: Ico.cash,    show: isFinance },
-    { key: 'signature', label: 'Tanda Tangan Saya',      icon: Ico.signature, show: true },
     {
-      key: 'invoice', label: 'Invoice', icon: Ico.invoice, show: isInvoiceUser,
+      key: 'database', label: 'Database', icon: Ico.database, show: true,
       children: [
-        { key: 'invoice-list',     label: 'Daftar Invoice',     show: true },
-        { key: 'invoice-settings', label: 'Pengaturan Invoice', show: true },
+        { key: 'signature',       label: 'Tanda Tangan Saya', show: true },
+        { key: 'invoice-settings', label: 'Pengaturan Invoice', show: isInvoiceUser },
       ].filter((c) => c.show),
     },
     { key: 'admin',     label: 'Admin Panel',           icon: Ico.admin,     show: profile.role === 'admin', accent: true },
@@ -333,7 +333,7 @@ export default function App() {
             {tab === 'cash-flow-report'       && isFinance  && <CashFlowReport profile={profile} refreshKey={refreshKey} />}
             {tab === 'admin'                  && profile.role === 'admin' && <AdminPanel />}
             {tab === 'signature' && <MyProfile profile={profile} onUpdated={loadProfile} />}
-            {tab === 'invoice-list'     && isInvoiceUser    && <InvoiceList profile={profile} />}
+            {tab === 'submit-invoice'   && isInvoiceUser    && <InvoiceSubmit profile={profile} />}
             {tab === 'invoice-settings' && isInvoiceUser    && <InvoiceSettings profile={profile} />}
           </div>
         </div>

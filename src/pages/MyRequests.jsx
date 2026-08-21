@@ -10,9 +10,10 @@ import AttachmentPreviewLink from '../components/AttachmentPreviewLink.jsx'
 import SkeletonTable from '../components/SkeletonTable.jsx'
 import { CATEGORIES, MAX_FILE_MB } from '../lib/constants.js'
 import { rupiah, statusLabelFor, requiredRoleFor, initialStatusFor, approvalFlowLabel, fetchAttachments, validatePickedFiles, formatThousands, stripThousands } from '../lib/helpers.js'
+import InvoiceRequests from './Invoice/InvoiceRequests.jsx'
 
-// ---------------------------------------------------------------- MY REQUESTS ----
-export default function MyRequests({ profile, refreshKey, onRefresh }) {
+// ---------------------------------------------------------------- MY REQUESTS (REIMBURSEMENT) ----
+function ReimbursementMyRequests({ profile, refreshKey, onRefresh }) {
   const [rows, setRows]           = useState([])
   const [loadingData, setLoadingData] = useState(true)
   const [openId, setOpenId]       = useState(null)
@@ -522,5 +523,30 @@ export default function MyRequests({ profile, refreshKey, onRefresh }) {
         </Portal>
       )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------- PENGAJUAN SAYA (GABUNGAN) ----
+// Satu menu "Pengajuan Saya" untuk semua: reimbursement petty cash & invoice.
+// Kalau user tidak punya akses invoice, tampil seperti biasa (tanpa tab).
+// Kalau punya akses invoice, muncul 2 tab kecil untuk pindah antar daftar.
+export default function MyRequests({ profile, refreshKey, onRefresh }) {
+  const isInvoiceUser = ['staff', 'manager'].includes(profile.invoice_role) || profile.role === 'admin'
+  const [section, setSection] = useState('reimb')
+
+  if (!isInvoiceUser) {
+    return <ReimbursementMyRequests profile={profile} refreshKey={refreshKey} onRefresh={onRefresh} />
+  }
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        <button className={`btn btn-sm ${section === 'reimb' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setSection('reimb')}>Pengajuan Petty Cash Reimbursement</button>
+        <button className={`btn btn-sm ${section === 'invoice' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setSection('invoice')}>Pengajuan Invoice</button>
+      </div>
+      {section === 'reimb'
+        ? <ReimbursementMyRequests profile={profile} refreshKey={refreshKey} onRefresh={onRefresh} />
+        : <InvoiceRequests profile={profile} />}
+    </>
   )
 }

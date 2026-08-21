@@ -5,8 +5,21 @@ web invoice terpisah). Satu login, satu deploy, satu database.
 
 ## Apa yang berubah?
 
-- Menu baru **"Invoice"** muncul di sidebar (untuk user yang punya akses),
-  dengan submenu: **Daftar Invoice** dan **Pengaturan Invoice**.
+- **Menu Invoice tersebar rapi ke menu yang sudah ada** (bukan menu
+  "Invoice" sendiri) — sesuai struktur sidebar terbaru:
+  - **Submit → Submit Invoice**: form isi invoice baru (dulunya pop-up,
+    sekarang halaman penuh). Setelah simpan, form otomatis kosong lagi
+    supaya bisa lanjut isi invoice berikutnya — sama seperti Submit
+    Reimbursement.
+  - **Pengajuan Saya**: sekarang punya 2 tab — **Pengajuan Petty Cash
+    Reimbursement** (seperti biasa) dan **Pengajuan Invoice** (daftar
+    semua invoice: cari, bulk action, edit draft, cetak, hapus). Tab
+    Invoice hanya muncul untuk user yang punya akses invoice.
+  - **Database**: menu baru yang isinya **Tanda Tangan Saya** dan
+    **Pengaturan Invoice** (khusus user dengan akses invoice) jadi satu
+    tempat — data acuan yang jarang diubah tapi dipakai fitur lain.
+  - **Approval**: tetap 1 menu untuk approval reimbursement & invoice
+    (lihat poin di bawah).
 - **Approval jadi satu menu.** Menu **"Approval"** yang sudah ada di PCRS
   sekarang juga dipakai untuk approval invoice. Kalau seorang user cuma
   approver reimbursement, tampilannya sama seperti biasa. Kalau user itu
@@ -14,18 +27,20 @@ web invoice terpisah). Satu login, satu deploy, satu database.
   Kalau user itu approver reimbursement **sekaligus** Manager Invoice,
   muncul 2 tab kecil ("Reimbursement" / "Invoice") di dalam 1 menu Approval
   itu untuk pindah antar antrian — tidak ada lagi menu approval terpisah.
-- **Tanda tangan jadi satu.** Menu **"Tanda Tangan Saya"** yang sudah ada di
-  PCRS sekarang dipakai bersama untuk slip reimbursement DAN invoice — user
-  cukup upload/gambar 1 tanda tangan saja. Khusus Manager Invoice, di
-  halaman yang sama ada tambahan field **"Jabatan (untuk Invoice)"** (mis.
-  "Finance Manager") yang muncul di bawah tanda tangan saat invoice dicetak.
-- **Bulk action** di Daftar Invoice: centang beberapa invoice sekaligus
-  (ada checkbox "pilih semua" di header tabel) untuk **Print bareng**,
-  **Ajukan Draft bareng** (khusus yang berstatus Draft & datanya sudah
-  lengkap), atau **Hapus bareng** (khusus yang belum disetujui).
+- **Tanda tangan jadi satu.** Menu **"Tanda Tangan Saya"** (sekarang di
+  dalam menu Database) dipakai bersama untuk slip reimbursement DAN
+  invoice — user cukup upload/gambar 1 tanda tangan saja. Khusus Manager
+  Invoice, di halaman yang sama ada tambahan field **"Jabatan (untuk
+  Invoice)"** (mis. "Finance Manager") yang muncul di bawah tanda tangan
+  saat invoice dicetak.
+- **Bulk action** di tab Pengajuan Invoice: centang beberapa invoice
+  sekaligus (ada checkbox "pilih semua" di header tabel) untuk **Print
+  bareng**, **Ajukan Draft bareng** (khusus yang berstatus Draft & datanya
+  sudah lengkap), atau **Hapus bareng** (khusus yang belum disetujui).
 - **Import dari Excel sekarang jadi Draft**, bukan langsung Diajukan &
   otomatis disetujui seperti sebelumnya. Setelah diimpor, cek datanya dulu
-  lalu klik Ajukan (satuan atau bulk) kalau sudah oke.
+  lalu klik Ajukan (satuan atau bulk) kalau sudah oke. Tombol impor ada di
+  tab Pengajuan Invoice.
 - Login tetap pakai akun PCRS yang sudah ada (Supabase Auth) — tidak ada
   login terpisah lagi untuk invoice.
 - Semua tabel invoice (`invoices`, `invoice_items`, dst) dipindah ke project
@@ -99,17 +114,26 @@ supabase/migrations/20260812000000_merge_invoice_app.sql
                                      → BARU, migrasi database (jalankan sekali)
 src/lib/invoiceHelpers.js           → BARU, logic nomor invoice & format angka
 src/lib/invoicePrint.js             → BARU, template cetak/PDF invoice
-src/pages/Invoice/InvoiceList.jsx   → BARU, halaman Daftar Invoice
+src/lib/useInvoiceSettings.js       → BARU, hook ambil data customer/format nomor/perusahaan
+src/pages/Invoice/InvoiceForm.jsx   → BARU, form isi/edit 1 invoice (dipakai bersama
+                                          oleh Submit Invoice & modal edit di Pengajuan Saya)
+src/pages/Invoice/InvoiceSubmit.jsx → BARU, halaman "Submit Invoice" (di menu Submit)
+src/pages/Invoice/InvoiceRequests.jsx → BARU, daftar invoice (tab "Pengajuan Invoice"
+                                          DI DALAM menu Pengajuan Saya, bukan menu sendiri)
 src/pages/Invoice/InvoiceApproval.jsx → BARU, antrian approval invoice (dipakai
                                           DI DALAM menu Approval, bukan menu sendiri)
-src/pages/Invoice/InvoiceSettings.jsx → BARU, halaman Pengaturan Invoice
-src/App.jsx           → diubah: tambah menu Invoice, dropdown sidebar multi-grup,
-                          menu Approval sekarang juga untuk Manager Invoice
+src/pages/Invoice/InvoiceSettings.jsx → BARU, halaman Pengaturan Invoice (sekarang
+                                          di dalam menu Database, bukan menu sendiri)
+src/App.jsx           → diubah: sidebar dirapikan — menu Database (gabungan Tanda
+                          Tangan Saya + Pengaturan Invoice), Submit Invoice masuk
+                          submenu Submit, menu Approval juga untuk Manager Invoice
+src/pages/MyRequests.jsx    → diubah: jadi 2 tab (Reimbursement / Invoice) untuk
+                                user yang punya akses invoice
 src/pages/ApprovalQueue.jsx → diubah: gabung antrian reimbursement + invoice
                                 jadi 1 menu (dengan tab kalau user punya akses keduanya)
 src/pages/MyProfile.jsx     → diubah: tambah field "Jabatan (untuk Invoice)"
                                 untuk Manager Invoice, tanda tangan dipakai bersama
-src/icons.jsx       → diubah: tambah ikon invoice
+src/icons.jsx       → diubah: tambah ikon invoice & database
 src/AdminPanel.jsx  → diubah: tambah kolom "Akses Invoice" di Kelola User
 ```
 
