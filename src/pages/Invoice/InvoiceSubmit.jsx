@@ -3,7 +3,7 @@ import InvoiceForm from './InvoiceForm.jsx'
 import { useInvoiceSettings } from '../../lib/useInvoiceSettings.js'
 
 export default function InvoiceSubmit({ profile }) {
-  const { customers, numberFormat, loading } = useInvoiceSettings()
+  const { customers, numberFormat, exchangeRates, loading } = useInvoiceSettings()
 
   return (
     <div className="card">
@@ -17,7 +17,7 @@ export default function InvoiceSubmit({ profile }) {
       {loading ? (
         <div className="empty-state">Memuat...</div>
       ) : (
-        <InvoiceForm profile={profile} customers={customers} numberFormat={numberFormat} invoice={null} />
+        <InvoiceForm profile={profile} customers={customers} numberFormat={numberFormat} exchangeRates={exchangeRates} invoice={null} />
       )}
     </div>
   )

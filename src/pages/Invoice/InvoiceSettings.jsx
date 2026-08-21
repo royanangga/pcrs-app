@@ -1,6 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../../supabaseClient'
 import Icon from '../../icons.jsx'
+
+const QUARTERS = [
+  { key: 'Q1', label: 'Q1 (Jan–Mar)' },
+  { key: 'Q2', label: 'Q2 (Apr–Jun)' },
+  { key: 'Q3', label: 'Q3 (Jul–Sep)' },
+  { key: 'Q4', label: 'Q4 (Okt–Des)' },
+]
 
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -19,6 +26,10 @@ export default function InvoiceSettings({ profile }) {
   const [company, setCompany] = useState({})
   const [customers, setCustomers] = useState([])
   const [numberFormat, setNumberFormat] = useState('')
+  const [exchangeRates, setExchangeRates] = useState({})
+  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()))
+  const [newYearInput, setNewYearInput] = useState('')
+  const [newCurrencyCode, setNewCurrencyCode] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
@@ -30,6 +41,7 @@ export default function InvoiceSettings({ profile }) {
     setCompany(map.company || {})
     setCustomers(map.customers || [])
     setNumberFormat(map.number_format || '{seq}/INV/FJI-FA/{roman}/{year}')
+    setExchangeRates(map.exchange_rates || {})
     setLoading(false)
   }, [])
 
@@ -57,6 +69,53 @@ export default function InvoiceSettings({ profile }) {
   function addCustomer() { setCustomers((cs) => [...cs, { name: '', address: '', attn: '', currency: 'IDR', code: '' }]) }
   function removeCustomer(i) { setCustomers((cs) => cs.filter((_, idx) => idx !== i)) }
 
+  const years = useMemo(() => {
+    const ys = new Set(Object.keys(exchangeRates))
+    ys.add(selectedYear)
+    return [...ys].sort()
+  }, [exchangeRates, selectedYear])
+
+  const currencyRows = useMemo(() => {
+    const fromYear = Object.keys(exchangeRates[selectedYear] || {})
+    return [...new Set(['USD', 'JPY', ...fromYear])]
+  }, [exchangeRates, selectedYear])
+
+  function addYear() {
+    const y = newYearInput.trim()
+    if (!/^\d{4}$/.test(y)) return
+    setExchangeRates((er) => ({ ...er, [y]: er[y] || {} }))
+    setSelectedYear(y)
+    setNewYearInput('')
+  }
+
+  function updateRate(cur, q, value) {
+    setExchangeRates((er) => ({
+      ...er,
+      [selectedYear]: {
+        ...(er[selectedYear] || {}),
+        [cur]: { ...(er[selectedYear]?.[cur] || {}), [q]: value },
+      },
+    }))
+  }
+
+  function addCurrencyRow() {
+    const code = newCurrencyCode.trim().toUpperCase()
+    if (!code) return
+    setExchangeRates((er) => ({
+      ...er,
+      [selectedYear]: { ...(er[selectedYear] || {}), [code]: (er[selectedYear] || {})[code] || {} },
+    }))
+    setNewCurrencyCode('')
+  }
+
+  function removeCurrencyRow(cur) {
+    setExchangeRates((er) => {
+      const yearData = { ...(er[selectedYear] || {}) }
+      delete yearData[cur]
+      return { ...er, [selectedYear]: yearData }
+    })
+  }
+
   if (loading) return <div className="card"><div className="empty-state">Memuat...</div></div>
 
   return (
@@ -65,6 +124,7 @@ export default function InvoiceSettings({ profile }) {
         <button className={`btn btn-sm ${tab === 'company' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setTab('company')}>Data Perusahaan</button>
         <button className={`btn btn-sm ${tab === 'customers' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setTab('customers')}>Daftar Customer</button>
         <button className={`btn btn-sm ${tab === 'format' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setTab('format')}>Format Nomor</button>
+        <button className={`btn btn-sm ${tab === 'exchange' ? 'btn-primary' : 'btn-neutral'}`} onClick={() => setTab('exchange')}>Exchange Rate</button>
       </div>
 
       {msg && <div className="error-text" style={{ marginBottom: 10, color: msg.startsWith('Gagal') ? 'var(--danger)' : 'var(--success)' }}>{msg}</div>}
@@ -135,6 +195,70 @@ export default function InvoiceSettings({ profile }) {
             Placeholder yang bisa dipakai: <code>{'{seq}'}</code> (nomor urut 3 digit), <code>{'{roman}'}</code> (angka romawi bulan), <code>{'{year}'}</code> (tahun).
           </div>
           <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={saving} onClick={() => saveSetting('number_format', numberFormat)}>{saving ? 'Menyimpan...' : 'Simpan Format'}</button>
+        </div>
+      )}
+
+      {tab === 'exchange' && (
+        <div style={{ maxWidth: 650 }}>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: -4, marginBottom: 14 }}>
+            Isi kurs per kuartal di sini. Saat bikin invoice, Exchange Rate otomatis terisi sesuai
+            mata uang & tanggal invoice yang dipilih (kuartal ditentukan dari tanggalnya) — tetap
+            bisa diubah manual per invoice kalau memang perlu beda dari kurs standar ini.
+          </p>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
+            <label style={{ marginBottom: 0 }}>Tahun</label>
+            <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} style={{ width: 110 }}>
+              {years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <input
+              type="text" inputMode="numeric" placeholder="mis. 2027" value={newYearInput}
+              onChange={(e) => setNewYearInput(e.target.value)} style={{ width: 90 }}
+            />
+            <button className="btn btn-sm btn-neutral" onClick={addYear}>+ Tambah Tahun</button>
+          </div>
+
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Mata Uang</th>
+                  {QUARTERS.map((q) => <th key={q.key}>{q.label}</th>)}
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {currencyRows.map((cur) => (
+                  <tr key={cur}>
+                    <td>{cur}</td>
+                    {QUARTERS.map((q) => (
+                      <td key={q.key}>
+                        <input
+                          type="number" step="any" style={{ width: 110 }}
+                          value={exchangeRates[selectedYear]?.[cur]?.[q.key] ?? ''}
+                          onChange={(e) => updateRate(cur, q.key, e.target.value)}
+                        />
+                      </td>
+                    ))}
+                    <td>
+                      {!['USD', 'JPY'].includes(cur) && (
+                        <button className="btn btn-sm btn-danger" onClick={() => removeCurrencyRow(cur)}><Icon name="trash" size={11} /></button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input
+              placeholder="Kode mata uang baru, mis. SGD" value={newCurrencyCode}
+              onChange={(e) => setNewCurrencyCode(e.target.value)} style={{ width: 180 }}
+            />
+            <button className="btn btn-sm btn-neutral" onClick={addCurrencyRow}>+ Tambah Mata Uang</button>
+            <button className="btn btn-primary btn-sm" disabled={saving} onClick={() => saveSetting('exchange_rates', exchangeRates)}>{saving ? 'Menyimpan...' : 'Simpan Exchange Rate'}</button>
+          </div>
         </div>
       )}
     </div>

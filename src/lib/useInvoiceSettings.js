@@ -7,6 +7,7 @@ export function useInvoiceSettings() {
   const [customers, setCustomers] = useState([])
   const [numberFormat, setNumberFormat] = useState('{seq}/INV/FJI-FA/{roman}/{year}')
   const [company, setCompany] = useState({})
+  const [exchangeRates, setExchangeRates] = useState({})
   const [loading, setLoading] = useState(true)
 
   const reload = useCallback(async () => {
@@ -16,10 +17,11 @@ export function useInvoiceSettings() {
     setCustomers(map.customers || [])
     setNumberFormat(map.number_format || '{seq}/INV/FJI-FA/{roman}/{year}')
     setCompany(map.company || {})
+    setExchangeRates(map.exchange_rates || {})
     setLoading(false)
   }, [])
 
   useEffect(() => { reload() }, [reload])
 
-  return { customers, numberFormat, company, loading, reload }
+  return { customers, numberFormat, company, exchangeRates, loading, reload }
 }

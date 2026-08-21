@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { supabase } from '../../supabaseClient'
 import { formatThousands, stripThousands } from '../../lib/helpers.js'
-import { nextInvoiceNumber, dueDateOneMonthEnd, numFmt, numFmtValuta, invoiceTotal } from '../../lib/invoiceHelpers.js'
+import { nextInvoiceNumber, dueDateOneMonthEnd, lookupExchangeRate, numFmt, numFmtValuta, invoiceTotal } from '../../lib/invoiceHelpers.js'
 import Icon from '../../icons.jsx'
 
 const emptyItem = () => ({ item_name: '', description: '', qty: '1', amount: '' })
@@ -42,15 +42,16 @@ function buildInitialForm(invoice) {
 //    otomatis setelah simpan supaya bisa lanjut isi invoice berikutnya)
 //  - Modal Edit di "Pengajuan Saya" > tab Pengajuan Invoice (invoice = row yang
 //    diedit, tampilkan tombol Batal, modal ditutup lewat onSaved/onCancel)
-export default function InvoiceForm({ profile, customers, numberFormat, invoice, onSaved, onCancel }) {
+export default function InvoiceForm({ profile, customers, numberFormat, exchangeRates, invoice, onSaved, onCancel }) {
   const [form, setForm] = useState(() => buildInitialForm(invoice))
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
 
-  // Due date otomatis cuma jalan selama user belum pernah ketik manual di
-  // field Due Date-nya sendiri (supaya tidak menimpa isian yang sudah
-  // disesuaikan tangan). Default aktif kalau due_date awal masih kosong.
+  // Due date & exchange rate otomatis cuma jalan selama user belum pernah
+  // ketik manual di field-nya sendiri (supaya tidak menimpa isian yang
+  // sudah disesuaikan tangan). Default aktif kalau nilai awalnya kosong.
   const [dueDateAuto, setDueDateAuto] = useState(() => !buildInitialForm(invoice).due_date)
+  const [exchangeRateAuto, setExchangeRateAuto] = useState(() => !buildInitialForm(invoice).exchange_rate)
 
   // Preview nomor invoice: cuma dihitung kalau invoice ini belum punya
   // nomor resmi (draft baru / draft lama yang belum diajukan). Nomor asli
@@ -97,6 +98,21 @@ export default function InvoiceForm({ profile, customers, numberFormat, invoice,
   function handleDueDateChange(value) {
     setDueDateAuto(false)
     setForm((f) => ({ ...f, due_date: value }))
+  }
+
+  // Auto-isi Exchange Rate dari tabel Exchange Rate di Pengaturan Invoice,
+  // berdasarkan mata uang & kuartal dari tanggal invoice yang berlaku.
+  useEffect(() => {
+    if (!exchangeRateAuto) return
+    if (form.currency === 'IDR') return
+    const rate = lookupExchangeRate(exchangeRates, form.currency, form.invoice_date)
+    if (rate !== null) setForm((f) => ({ ...f, exchange_rate: String(rate) }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.currency, form.invoice_date, exchangeRates, exchangeRateAuto])
+
+  function handleExchangeRateChange(value) {
+    setExchangeRateAuto(false)
+    setForm((f) => ({ ...f, exchange_rate: value }))
   }
 
   function updateItem(i, field, value) {
@@ -168,6 +184,7 @@ export default function InvoiceForm({ profile, customers, numberFormat, invoice,
         // (pola yang sama dengan Submit Reimbursement).
         setForm(buildInitialForm(null))
         setDueDateAuto(true)
+        setExchangeRateAuto(true)
         setMsg(`✓ Invoice ${asStatus === 'Draft' ? 'tersimpan sebagai Draft' : 'berhasil diajukan'}. Lihat & lanjutkan di menu "Pengajuan Saya" → tab "Pengajuan Invoice".`)
       }
       onSaved && onSaved(invoiceId, asStatus)
@@ -237,8 +254,8 @@ export default function InvoiceForm({ profile, customers, numberFormat, invoice,
         </div>
         {form.currency !== 'IDR' && (
           <div>
-            <label>Exchange Rate (1 {form.currency} = ? IDR)</label>
-            <input type="number" step="any" value={form.exchange_rate} onChange={(e) => setForm({ ...form, exchange_rate: e.target.value })} />
+            <label>Exchange Rate (1 {form.currency} = ? IDR){exchangeRateAuto ? ' (otomatis)' : ''}</label>
+            <input type="number" step="any" value={form.exchange_rate} onChange={(e) => handleExchangeRateChange(e.target.value)} />
           </div>
         )}
         <div style={{ gridColumn: '1 / -1' }}>

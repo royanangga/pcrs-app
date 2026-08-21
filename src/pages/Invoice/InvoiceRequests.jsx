@@ -9,7 +9,7 @@ import { printInvoice, printInvoiceBatch } from '../../lib/invoicePrint.js'
 import InvoiceForm from './InvoiceForm.jsx'
 
 export default function InvoiceRequests({ profile }) {
-  const { customers, numberFormat, company } = useInvoiceSettings()
+  const { customers, numberFormat, company, exchangeRates } = useInvoiceSettings()
 
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -366,6 +366,7 @@ export default function InvoiceRequests({ profile }) {
                 profile={profile}
                 customers={customers}
                 numberFormat={numberFormat}
+                exchangeRates={exchangeRates}
                 invoice={editingRow}
                 onCancel={() => setEditingRow(null)}
                 onSaved={() => { setEditingRow(null); load() }}

@@ -52,3 +52,24 @@ export function dueDateOneMonthEnd(invoiceDateStr) {
   const lastDay = new Date(d.getFullYear(), d.getMonth() + 2, 0)
   return lastDay.toISOString().slice(0, 10)
 }
+
+// Q1: Jan-Mar, Q2: Apr-Jun, Q3: Jul-Sep, Q4: Okt-Des.
+export function quarterOf(dateStr) {
+  if (!dateStr) return null
+  const month = new Date(dateStr + 'T00:00:00').getMonth() + 1
+  if (Number.isNaN(month)) return null
+  if (month <= 3) return 'Q1'
+  if (month <= 6) return 'Q2'
+  if (month <= 9) return 'Q3'
+  return 'Q4'
+}
+
+// exchangeRates: { "2026": { "USD": { Q1, Q2, Q3, Q4 }, "JPY": {...} }, ... }
+// (disimpan di invoice_settings key 'exchange_rates', diatur di menu Pengaturan Invoice)
+export function lookupExchangeRate(exchangeRates, currency, dateStr) {
+  if (!dateStr || !currency || currency === 'IDR') return null
+  const year = String(new Date(dateStr + 'T00:00:00').getFullYear())
+  const q = quarterOf(dateStr)
+  const rate = exchangeRates?.[year]?.[currency]?.[q]
+  return (rate === undefined || rate === '' || rate === null) ? null : Number(rate)
+}
