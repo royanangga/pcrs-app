@@ -17,7 +17,7 @@ export default function InvoiceSubmit({ profile }) {
       {loading ? (
         <div className="empty-state">Memuat...</div>
       ) : (
-        <InvoiceForm profile={profile} customers={customers} numberFormat={numberFormat} exchangeRates={exchangeRates} invoice={null} />
+        <InvoiceForm profile={profile} customers={customers} numberFormat={numberFormat} exchangeRates={exchangeRates} invoice={null} showAddressFields={false} />
       )}
     </div>
   )

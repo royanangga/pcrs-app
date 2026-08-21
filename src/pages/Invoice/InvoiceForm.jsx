@@ -42,7 +42,7 @@ function buildInitialForm(invoice) {
 //    otomatis setelah simpan supaya bisa lanjut isi invoice berikutnya)
 //  - Modal Edit di "Pengajuan Saya" > tab Pengajuan Invoice (invoice = row yang
 //    diedit, tampilkan tombol Batal, modal ditutup lewat onSaved/onCancel)
-export default function InvoiceForm({ profile, customers, numberFormat, exchangeRates, invoice, onSaved, onCancel }) {
+export default function InvoiceForm({ profile, customers, numberFormat, exchangeRates, invoice, onSaved, onCancel, showAddressFields = true }) {
   const [form, setForm] = useState(() => buildInitialForm(invoice))
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
@@ -208,15 +208,24 @@ export default function InvoiceForm({ profile, customers, numberFormat, exchange
         <div>
           <label>Nama Customer</label>
           <input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} />
+          {!showAddressFields && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+              Alamat & ATTN otomatis terisi dari data customer (atur di menu Pengaturan Invoice).
+            </div>
+          )}
         </div>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <label>Alamat Customer</label>
-          <textarea rows={2} value={form.customer_address} onChange={(e) => setForm({ ...form, customer_address: e.target.value })} />
-        </div>
-        <div>
-          <label>ATTN</label>
-          <input value={form.attn} onChange={(e) => setForm({ ...form, attn: e.target.value })} />
-        </div>
+        {showAddressFields && (
+          <>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label>Alamat Customer</label>
+              <textarea rows={2} value={form.customer_address} onChange={(e) => setForm({ ...form, customer_address: e.target.value })} />
+            </div>
+            <div>
+              <label>ATTN</label>
+              <input value={form.attn} onChange={(e) => setForm({ ...form, attn: e.target.value })} />
+            </div>
+          </>
+        )}
         <div>
           <label>Batch</label>
           <input value={form.batch} onChange={(e) => setForm({ ...form, batch: e.target.value })} />
